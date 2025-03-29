@@ -14,8 +14,8 @@ from random import random
 
 # -- taken from table 1 p7
 state_transition_probabilities = {
-    (0, 0): {1: 0.987, 2: 0.976, 3: 0.954, 4: 0.979},
-    (0, 1): {1: 0.013, 2: 0.024, 3: 0.046, 4: 0.021},
+    (0, 0): {1: 0.987, 2: 0.976, 3: 0.954, 4: 0.979,0: 1},
+    (0, 1): {1: 0.013, 2: 0.024, 3: 0.046, 4: 0.021, 0:0},
     (1, 0): {0: 0.124, 1: 0.041, 2: 0.016, 3: 0.008, 4: 0.002},
     (1, 1): {0: 0.876, 1: 0.959, 2: 0.984, 3: 0.992, 4: 0.998},
 }
@@ -29,20 +29,20 @@ def physarum(cell, neighbors: list):
     '''
     state, time= cell
     num_state_one_neighbors = CountType(neighbors, 1)
+    # print(f'cell: {cell}, neighbors: {neighbors}, num_state_one_neighbors: {num_state_one_neighbors}')
     match state:
         case 'zero': 
             # -- need to cehck if has at least 1 state one neighbor (table 1 p7)
             proba_random = random()
-            if num_state_one_neighbors>0 and proba_random < state_transition_probabilities[(0, 1)][num_state_one_neighbors]:
+            if proba_random < state_transition_probabilities[(0, 1)][num_state_one_neighbors]:
                 return ('one', None)
-            elif num_state_one_neighbors>0 : #2nd condition is not met meaning its transitioning to state 0
-                return ('zero', None)
             else:
-                return cell #if has strictly state 0 neighbors returns the same state
+                return ('zero', None)
             
         case 'one':
             proba_random = random()
             if proba_random < state_transition_probabilities[(1, 0)][num_state_one_neighbors]:
+                # print(f'probability of 1 to 0: {state_transition_probabilities[(1, 0)][num_state_one_neighbors]} -> going to 0')
                 return ('zero', None)
             else:
                 return ('one', None)
@@ -52,7 +52,7 @@ def physarum(cell, neighbors: list):
             
 
 def main():
-    cellcolors = {   # color assigned to cells in their initial states.
+    cellcolors = {   
         ('zero', None): 'white',
         ('one', None): 'yellow',
         }
