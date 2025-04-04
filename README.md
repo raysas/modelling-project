@@ -112,5 +112,6 @@ if current_agent.radius < delta_p:
 
 ```
 
+
 ### $IC$ rules
 
