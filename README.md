@@ -25,7 +25,7 @@ for $IC$:
 * 0: NK cell | natural killer cell, it dies after collision with a tumor cell
 * 1: CTL cell | cytotoxic T lymphocyte, it can proliferate and die after collision with a tumor cell, but is cell specific
 
-$\#\ new born\ IC = f (\#\ successful\ defeats)$  (details later, just not that it depends on the number of successes/failures in killing tumor cells)  
+$nb\ new born\ IC = f (nb\ successful\ defeats)$  (details later, just not that it depends on the number of successes/failures in killing tumor cells)  
 Both modes have the same behavior: 
 * _random walk_ (moving randomly in grid by substituting an $NIC_0$)
 * interact with $NIC_1 (PT)$: anti-tumor, neutra, pro-tumor 
@@ -62,7 +62,7 @@ We have 2 types of PT: 1 is mutant, no impact of environment on its proliferatio
 Proliferation probability is a function of time and space $f(age, radius)$, r_p is the division probability, it's equal to:  
 
 * $p_1 = p_0 ( 1 - \frac{r}{Rmax})$ when it's a mutant PT (type 1), $p_0$ is base probablity for a mutant proliferative tumor cell
-* $p_2 = \phi_0 \times \#neighboringN \times (1-\frac{r}{Rmax})$ when it's type 2, $\phi_0$ is base probablity for a non-mutant proliferative tumor cell
+* $p_2 = \phi_0 \times nbneighboringN \times (1-\frac{r}{Rmax})$ when it's type 2, $\phi_0$ is base probablity for a non-mutant proliferative tumor cell
 
 $Rmax$ is the max radius of the tumor, when it reaches it, it stops growing (dure to lack of nutrients, it's an avascular system) $\implies$ r_p=0
 
@@ -140,7 +140,7 @@ There are 3 possible behaviors when IC meets an NIC of mode=1 (only interacts wi
 if there is no neighboring PT, it proceeds with the random walk (searchs for free space to move to it in the next iteration, if there arent any it stays)
 
 recruitement, as we said is a function of success/failure difference in killing tumor cells:
-$$\#newbornIC=(v-f) \frac{nPT}{nT}$$
+$$nbnewbornIC=(v-f) \frac{nPT}{nT}$$
 
 if >0, there is recruitement, which means, a random free space searched becomes IC, and nb cells searching = # newborn IC
 
