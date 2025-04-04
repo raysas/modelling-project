@@ -4,7 +4,8 @@
 
 ### Definition of the system
 
-_This is agent-based model in 2D space, Moore neighborhood is used, and Gompertzian growth dynamics is considered_
+_This is agent-based model in 2D space, Moore neighborhood is used, and Gompertzian growth dynamics is considered_  
+
 
 There are 2 types of agents:
 * NIC: non-immune cells
@@ -27,8 +28,11 @@ for $IC$:
 $\#\ new born\ IC = f (\#\ successful\ defeats)$  (details later, just not that it depends on the number of successes/failures in killing tumor cells)  
 Both modes have the same behavior: 
 * _random walk_ (moving randomly in grid by substituting an $NIC_0$)
-* ability to kill $NIC_1 (PT)$ 
-* immune cells constitently do interaction that are either immune-normal or immune-tumor
+* interact with $NIC_1 (PT)$: anti-tumor, neutra, pro-tumor 
+* immune cells constitently do interaction that are either immune-normal (random walk) or immune-tumor (could kill it, be killed or nothing happens)
+
+**Initialization:**  
+Starting with a 2d grid of size $L \times L$ (lattice), each cell is represented by an agent, all free cells (NIC 0). Initialize some proliferative cells in the middle and some immune cells at corner, starting with paramters found in table 3 and setting Nmm value (0.2 fig 6, or let user change it - see figure 7-9).
 
 ### $NIC$ rules
 
@@ -143,13 +147,33 @@ if >0, there is recruitement, which means, a random free space searched becomes 
 > [!CAUTION]
 cells only signals other cells that have physical contact with?
 
-### Simulation
+### Notes
 
 Some useful functions to implement (get the dynamic param in table 2 or even compute probas)
 
+On an agent level:
 - is_immune(agent) -> returns true if current.agent is IC
 useful to compute $nI$ and $nI_1$
 - is_tumor(agent) -> returns true if agent is NIC and mode is either 1, 2 or 3 (According to figure 4, Ne + NT + PT =total of tumor cells (T) so $nT=Ne+NT+PT$)
+
+at each time step, on the grid:
 - avg_radius
-- growth_fraction = $\frac{nPT}{nT}$ (nT here signifies the whole tumor)
-- necrotic fraction = $\frac{nNe}{nT}$
+- growth_fraction (GF) = $\frac{nPT}{nT}$ (nT here signifies the whole tumor)
+- necrotic_fraction (NF) = $\frac{nNe}{nT}$
+- tumor_radius (Rt)= avg radiu sof all tumor cells
+- necrotic_radius (Rne)= avg radius of all necrotic cells 
+- Nmm_t(all) fraction of non mutant to mutant cells
+
+Parameters:
+- Nmm should be set at teh beginning of the simulation, that is, tha ration of non-mutant to mutant cells. maybe make the user choose it from a list of values (bar)
+
+The first 9 figures are values of parameters on a model of only NIC agents (still no IC introduced), maybe better to start like this and make sure the same behavior of groth holds, before starting with interactions.
+
+The figrues show:
+- 4: number of cells over time (3 types of tumor cells) | not part of the results
+- 5: average radius change over time (overall-tumor and necrotic radii) | growth and necrotic fractions over time
+- 6: number of mutant and non-mutant cells over time (starting Nmm=0.2)
+- 7: trying different values of Nmm (`range(0, 1, step=0.1)`) and plotting the number of cells over time (3 types of cells, each in a seperate plot)
+- 8: on different calues of Nmm, GF and NF over time
+- 9: on different values of Nmm (initial values), mutant/non-mutant evolution over time (inverse Nmm_t maybe). I think the y label in the figure is wrong
+
