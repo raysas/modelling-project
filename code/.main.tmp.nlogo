@@ -7,8 +7,6 @@ ICs-own [mode]
 ;; -- parameters
 
 
-
-
 to setup
   clear-all
 
@@ -70,12 +68,14 @@ to color-patches-based-on-cell-type
   ]
 end
 
-
-
-;; -- setting soem parameters
-to set-Nmm [new-value]
-  set Nmm new-value  ;; Assign the new value to Nmm
+to recruit-IC
+  let L sqrt count patches ;;number of rows
+  let choose_direction random-float 1
+  show choose_direction
+  let corner_patches patches with [ abs pxcor <= L5 and abs pycor <= 5 ]
 end
+
+
 @#$#@#$#@
 GRAPHICS-WINDOW
 210
@@ -130,7 +130,7 @@ Nmm
 Nmm
 0
 1
-50.0
+0.8
 0.1
 1
 NIL

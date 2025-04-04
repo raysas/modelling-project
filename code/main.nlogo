@@ -4,6 +4,7 @@ breed [ICs IC]
 NICs-own [mode age radius mtype] ;;type is strictly for NIC of mode 0 (1 mutant, 2 non-muta
 ICs-own [mode]
 
+;; -- parameters
 
 
 to setup
@@ -12,11 +13,10 @@ to setup
   ;; --initializing all cells to NIC of mode 0
   ask patches [
     sprout-NICs 1 [
-      set color grey ;;just testing to see movement for now, but will make the patches be colored by the type of turtle on it
       set mode 0
       set age 0
       set radius 1  ;; define radius here if needed
-      set size 1
+      set size 0.5
     ]
   ]
 
@@ -24,7 +24,7 @@ to setup
   ;;   define middle patches and select a subset randomly
   let center_patches patches with [ abs pxcor <= 5 and abs pycor <= 5 ] ;; adjust range as needed
   let center_patches_num count center_patches ;; number of center patches
-  let NIC0_num_initial round (0.4 * center_patches_num) ;; number of NICs to be created
+  let NIC0_num_initial round (0.2 * center_patches_num) ;; number of NICs to be created
   let NIC0_center_patches n-of NIC0_num_initial center_patches ;; select random center patches
 
   show NIC0_center_patches ;; debug: see if the patches are selected correctly
@@ -34,16 +34,45 @@ to setup
   ask  NIC0_center_patches [
     show patches
     sprout-NICs 1 [
-      set color blue
       set mode 1
       set age 0
       set radius 1
-      set size 2 ;; make NIC size a bit larger for better visibility
+      set size 0.5 ;; make NIC size a bit larger for better visibility
     ]
   ]
-
+  color-patches-based-on-cell-type
   reset-ticks
 end
+
+
+to color-patches-based-on-cell-type
+  ask patches [
+    ifelse any? NICs-here [
+      let current_cell one-of NICs-here
+      if [mode] of current_cell = 0 [
+        set pcolor white  ;;free/normal cell
+      ]
+      if [mode] of current_cell = 1 [
+        set pcolor blue  ;;PT
+      ]
+      if [mode] of current_cell = 2 [
+        set pcolor red ;; NT
+      ]
+      if [mode] of current_cell = 3 [
+        set pcolor black ;;Ne
+      ]
+    ]
+    [
+      set pcolor green  ;; if not an NIC -> IC
+    ]
+  ]
+end
+
+to recruit-IC
+  let choose_direction random-float 1
+  show choose_direction
+end
+
 
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -89,6 +118,21 @@ NIL
 NIL
 NIL
 1
+
+SLIDER
+25
+69
+197
+102
+Nmm
+Nmm
+0
+1
+0.8
+0.1
+1
+NIL
+HORIZONTAL
 
 @#$#@#$#@
 ## WHAT IS IT?

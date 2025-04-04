@@ -76,7 +76,7 @@ $Rmax$ is the max radius of the tumor, when it reaches it, it stops growing (dur
 #   current_agent.mode = 1 (i.e., PT)
 
 if current_agent.age > age_threshold OR current_agent.radius > $\delta_p$:
-    # -- cell that is too old or radius > deltap 
+    # -- cell that is too old or radius < Rp?
     #       => quinescence, no more division
     
     current_agent.mode = 2 # -- becomes Non proliferative
@@ -104,15 +104,18 @@ fi
 
 #### $NIC_2$ | NT
 
-an NT cell can become proliferative if it's back in a particular position (?) (radius < delta p). But on the other hand can die if this radius becomes too large (> dela p + delta n)
+an NT cell can become proliferative if it's back in a particular position (?) (radius < delta p). But on the other hand can die if this radius becomes too large (> dela p + delta n? Rn related)
 
 ```
 # behavior of NIC_2, we're at current_agent where:
 #   current_agent.agent = NIC
 #   current_agent.mode = 2 (i.e., NT)
 
-if current_agent.radius < delta_p:
+if Rt - deltap < current_agent.radius < Rt + delta_p :
     current_agent.mode = 1 # -- becomes proliferative
+
+else if too away:
+    curren_agent.mode=3
 
 ```
 
