@@ -115,3 +115,41 @@ if current_agent.radius < delta_p:
 
 ### $IC$ rules
 
+Immune cells move towards the center of the tumor (Ne debris signals). It starts from one corner of the lattice and moves towards the center.
+
+This movement, _random walk_, is associated with a probability r_walk.
+$$r\_walk = k \times [ \frac{nT}{ncell^2}, \frac{nPT}{nT}]$$  
+
+> [!CAUTION]
+> not sure how is this calculated
+
+At the start, $\frac{nPT}{nT} \gt \gt \frac{nT}{ncell^2} \iff$ tumor cells are more proliferative, movement starts biased. Later,  $\frac{nT}{ncell^2}$ plays a role in the mvt, it's unbiased, random.
+
+There are 3 possible behaviors when IC meets an NIC of mode=1 (only interacts with PT):
+
+1. it kills the PT cell by replacing it (NIC 1 disappears), here it depends whether the IC is of mode 1 or 2
+    * if it's NL, it does the same for all neighboring PT cells
+    * else it's CTL (2), it chooses one randomly and does the transition
+2. no change, keeps earching
+3. it dies, becoming N or $\epsilon$ (agent type NIC, mode 0), and the cancer cell survives.
+
+if there is no neighboring PT, it proceeds with the random walk (searchs for free space to move to it in the next iteration, if there arent any it stays)
+
+recruitement, as we said is a function of success/failure difference in killing tumor cells:
+$$\#newbornIC=(v-f) \frac{nPT}{nT}$$
+
+if >0, there is recruitement, which means, a random free space searched becomes IC, and nb cells searching = # newborn IC
+
+> [!CAUTION]
+cells only signals other cells that have physical contact with?
+
+### Simulation
+
+Some useful functions to implement (get the dynamic param in table 2 or even compute probas)
+
+- is_immune(agent) -> returns true if current.agent is IC
+useful to compute $nI$ and $nI_1$
+- is_tumor(agent) -> returns true if agent is NIC and mode is either 1, 2 or 3 (According to figure 4, Ne + NT + PT =total of tumor cells (T) so $nT=Ne+NT+PT$)
+- avg_radius
+- growth_fraction = $\frac{nPT}{nT}$ (nT here signifies the whole tumor)
+- necrotic fraction = $\frac{nNe}{nT}$
