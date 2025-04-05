@@ -1,43 +1,48 @@
 breed [NICs NIC]
 breed [ICs IC]
 
-NICs-own [mode age radius mtype] ;;type is strictly for NIC of mode 0 (1 mutant, 2 non-muta
+NICs-own [mode age radius PT_type change_neighbor] ;;type is strictly for NIC of mode 0 (1 mutant, 2 non-muta
 ICs-own [mode]
+turtles-own [N_neighbors]
 
 ;; -- parameters
 
+globals [ p0 phi0 a b Rmax K0 KI]
+
+to initialize_parameters
+  set p0 0.7
+  set phi0 0.06
+  set a 0.42
+  set b 0.11
+  set Rmax 37.5
+  set K0 0.5
+  set KI 0.2
+end
 
 to setup
   clear-all
+
+  initialize_parameters
 
   ;; --initializing all cells to NIC of mode 0
   ask patches [
     sprout-NICs 1 [
       set mode 0
       set age 0
-      set radius 1  ;; define radius here if needed
+      set radius distancexy 0 0  ;; define radius here if needed
       set size 0.5
+      set change_neighbor 0
     ]
   ]
 
-  ;; --adding NICs in the middle:
-  ;;   define middle patches and select a subset randomly
-  let center_patches patches with [ abs pxcor <= 5 and abs pycor <= 5 ] ;; adjust range as needed
-  let center_patches_num count center_patches ;; number of center patches
-  let NIC0_num_initial round (0.2 * center_patches_num) ;; number of NICs to be created
-  let NIC0_center_patches n-of NIC0_num_initial center_patches ;; select random center patches
-
-  show NIC0_center_patches ;; debug: see if the patches are selected correctly
-
-  ;;let center_patch patch 0 0 ;; use ask patches with [distance center_patch < 10 ]
-
-  ask  NIC0_center_patches [
-    show patches
-    sprout-NICs 1 [
+  ask NICs [
+    if radius < Ri [
       set mode 1
-      set age 0
-      set radius 1
-      set size 0.5 ;; make NIC size a bit larger for better visibility
+      let proba_being_non_mutant random-float 1
+      ifelse proba_being_non_mutant < Nmm
+      [set PT_type 2]
+      [ set PT_type 1]
+
     ]
   ]
   color-patches-based-on-cell-type
@@ -45,44 +50,162 @@ to setup
 end
 
 
-to color-patches-based-on-cell-type
-  ask patches [
-    ifelse any? NICs-here [
-      let current_cell one-of NICs-here
-      if [mode] of current_cell = 0 [
-        set pcolor white  ;;free/normal cell
+to go
+
+  let R_t compute_R_t
+  let delta_p compute_delta_p
+  let delta_n compute_delta_n
+  let r_p 0
+
+  show R_t
+  show delta_p
+
+  ask NICs[
+      let neighbor_cells turtles-on neighbors
+      set N_neighbors neighbor_cells with [mode = 0]
+
+      ifelse PT_type = 1
+      [ set r_p p1 radius ]
+      [ set r_p p2 radius count N_neighbors ]
+
+  ]
+
+  ask NICs with [mode = 1 OR mode = 2][
+    ifelse mode = 1 [
+
+      ;; 1st condition: proliferate
+      let r random-float 1
+      let N count N_neighbors
+      ifelse r_p < r AND r_p >  0 AND N > 1 [
+        ;; -- chose a normal cell
+        let chosen_normal_cell one-of N_neighbors
+
+        ;; -- make 2 daughter cells
+        ;;    1st the N cell
+        ask chosen_normal_cell [
+          set change_neighbor 1
+          set age 0
+        ]
+        ;;    2nd the current cell
+        set age 0
       ]
-      if [mode] of current_cell = 1 [
-        set pcolor blue  ;;PT
+
+
+      [
+        ifelse age > age_threshold OR R_t - radius >  delta_p ;;2nd condition, -> NT
+        [set mode 2]
+        [set age age + 1] ;;3rd -> no change, becomes older
       ]
-      if [mode] of current_cell = 2 [
-        set pcolor red ;; NT
-      ]
-      if [mode] of current_cell = 3 [
-        set pcolor black ;;Ne
-      ]
+
     ]
+
+
+    ;;else, its mode 2
     [
-      set pcolor green  ;; if not an NIC -> IC
+      if R_t - radius > delta_n + delta_p
+      [ set mode 3 ]
+      if radius >= R_t - delta_p AND radius < R_t + delta_p
+      [set mode 1]
     ]
+  ]
+
+  ask NICs with [mode = 0 ][
+    if change_neighbor = 1
+    [set mode 1]
+
+  ]
+  color-patches-based-on-cell-type
+
+  tick
+end
+
+
+
+
+to color-patches-based-on-cell-type
+  ask NICs [
+    if mode = 0 [ask patch-here [set pcolor 103]]
+    if mode = 1 [ask patch-here [set pcolor 105]]
+    if mode = 2 [ask patch-here [set pcolor 15]]
+    if mode = 3 [ask patch-here [set pcolor 13]]
+  ]
+
+  ask ICs[
+    ask patch-here [set pcolor green ]
   ]
 end
 
 to recruit-IC
+  let L sqrt count patches ;;number of rows
   let choose_direction random-float 1
   show choose_direction
+  let corner_patches patches with [ abs pxcor <= 5 and abs pycor <= 5 ]
 end
 
 
+
+
+to-report p1 [r]
+  let proba p0 * (1 - (r / Rmax))
+  report proba
+end
+to-report p2 [r num_neighboring_N]
+  let proba phi0 * num_neighboring_N * (1 - (r / Rmax))
+  report proba
+end
+
+to-report compute_R_t
+  let value 0
+  let counter 0
+  ask NICs with [mode = 1 ] [
+    let neighbor_cells turtles-on neighbors
+    let N count neighbor_cells with [mode = 0]
+    if N >= 1 [
+      set value value + radius
+      set counter counter + 1
+    ]
+  ]
+
+  report value / counter
+end
+
+to-report compute_delta_n
+  let value a * compute_R_t ^ (2 / 3)
+  report value
+end
+to-report compute_delta_p
+  let value b * compute_R_t ^ (2 / 3)
+  report value
+end
+
+
+to-report countNe
+  let c 0
+  ask NICs with [mode = 3 ]
+  [set c c + 1]
+  report c
+end
+to-report countPT
+  let c 0
+  ask NICs with [mode = 1 ]
+  [set c c + 1]
+  report c
+end
+to-report countNT
+  let c 0
+  ask NICs with [mode = 2 ]
+  [set c c + 1]
+  report c
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
-210
+344
 10
-647
-448
+962
+629
 -1
 -1
-13.0
+10.0
 1
 10
 1
@@ -92,10 +215,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--16
-16
--16
-16
+-30
+30
+-30
+30
 0
 0
 1
@@ -128,11 +251,74 @@ Nmm
 Nmm
 0
 1
-0.8
+0.2
 0.1
 1
 NIL
 HORIZONTAL
+
+INPUTBOX
+37
+197
+192
+257
+Ri
+3.0
+1
+0
+Number
+
+BUTTON
+71
+291
+134
+324
+NIL
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SLIDER
+26
+28
+198
+61
+age_threshold
+age_threshold
+0
+50
+6.0
+1
+1
+NIL
+HORIZONTAL
+
+PLOT
+1104
+177
+1304
+327
+plot 1
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -2674135 true "" "plot count NICs with [ mode = 3 ]"
+"pen-1" 1.0 0 -987046 true "" "plot count NICs with [ mode = 2 ]"
+"pen-2" 1.0 0 -13345367 true "" "plot count NICs with [ mode = 1 ]"
 
 @#$#@#$#@
 ## WHAT IS IT?
