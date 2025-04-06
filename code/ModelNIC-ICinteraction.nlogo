@@ -84,8 +84,68 @@ to go
     ]
   ]
 
+  ;; ----- change unstable cells to normal, and replace by IC if IC has to move to it ----
+  ask NICs with [mode = 4 ][
+      ;; 1. it's either an unstable state that the IC will move to (change_to is IC)
+      ifelse is-IC? change_to [
+      let my-x xcor
+      let my-y ycor
+      let IC-x [xcor] of change_to
+      let IC-y [ycor] of change_to
+      let IC-mode [mode] of change_to
+      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
+      ask patch IC-x IC-y [
+        sprout-NICs 1 [set mode 0 set radius distancexy 0 0 set change_to nobody]
+        ask ICs-here [ die ]
+      ]
+      die
+    ]
+    ;; 2. or else unstable becomes normal
+    [set mode 0]
+  ]
+
   ;; ----- transition rules for NIC -----
-  NICs-transitions
+  ask NICs with [mode = 1 OR mode = 2][
+
+    ifelse mode = 1 [
+      let N_neighbors get-Nneighbors self
+      let N count N_neighbors
+
+      let r_p 0
+      ifelse PT_type = 1
+      [ set r_p p1 radius ]
+      [ set r_p p2 radius count N_neighbors ]
+
+      let r random-float 1
+
+      ;; 1st condition: proliferate
+      ifelse r_p > 0 AND r_p < r AND N > 1 [
+
+        ;; -- chose a normal cell
+        let chosen_normal_cell one-of N_neighbors
+
+        ;; -- make 2 daughter cells
+        set age 0
+        let reference_PT self
+        ask chosen_normal_cell [set change_to reference_PT]
+      ]
+      ;; no proliferation: 2 possibilities
+      [
+        ;; 2nd condition: -> NT
+        ifelse age > age_threshold OR radius < R_t - delta_p [set mode 2]
+        ;; 3rd condition -> no change, just increase age
+        [set age age + 1]
+      ]
+    ]
+
+    ;;else, its mode 2
+    [
+      ;; 1st cond: -> Ne
+      if R_t - radius > delta_n + delta_p [ set mode 3 ]
+      ;; 2nd cond -> PT
+      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
+    ]
+  ]
 
   ;; ------------ changing the daughter cells of PT to mode 1 ------------
   ask NICs with [mode = 0][
@@ -102,12 +162,63 @@ to go
     let nI1 compute_nI1 self
 
     ifelse nPT1 > 0 ;; --> if true perform interaction transition rules, else random walk
+    ;; transitions:
     [
-      ;; -- 1: anti tumor --
       let PT1 get-PT1 self
+      let r_I_proba compute_r_I_proba self
+      let r_T_proba compute_r_T_proba self
+      let killed_PTs []
+
+      ;; -- 1: anti tumor --
+      ;;    <> a. if IC is CTL
+      ifelse mode = 1 [
+        ;; -- looping through neighboring PTs, killing by proba r_I
+        ask PT1 [
+          let r random-float 1
+
+          if r < r_I_proba [ ;; -- PT cell killed
+            set mode 4 ;;-- defining mode 4: unstable state -> becomes normal/free cell
+            set killed_PTs lput self killed_PTs
+          ]
+        ]
+        ;; -- replace one of the killed cells (if any)
+        if not empty? killed_PTs [
+          let random_index random length killed_PTs
+          let chosen_cell item random_index killed_PTs
+
+          let reference_IC self
+          ask chosen_cell [ set change_to reference_IC ]
+        ]
+      ]
+      ;;    <> b. else IC is NK
+      [
+        let chosen_cell one-of PT1
+        let r random-float 1
+
+        if r < r_I_proba [
+          let reference_IC self
+          ask chosen_cell [
+            set mode 4
+            set change_to reference_IC
+            set killed_PTs lput chosen_cell killed_PTs
+          ]
+        ]
+      ]
+
+      ;; -- 3: pro tumor --
+      let r random-float 1
+      if empty? killed_PTs AND r < r_T_proba [
+        hatch-NICs 1 [
+          set mode 0
+          set radius distancexy 0 0
+          set change_to nobody
+        ]
+        die
+      ]
     ]
 
-    [ ;; if no neighboring PT: perform random walk
+    ;; if no neighboring PT: perform random walk
+    [
       let N_neighbors get-Nneighbors self
 
       let unbiased countT / countCells
@@ -280,14 +391,14 @@ to-report p2 [r num_neighboring_N]
   report proba
 end
 
-to-report rI_proba [a-turtle]
+to-report compute_r_I_proba [a-turtle]
   let nI1 compute_nI1 a-turtle
   let nPT1 compute_nPT1 a-turtle
   let proba K0 * ( (nI1) / (nPT1) )
   report proba
 end
 
-to-report rT_proba [a-turtle] ;; --named rT_proba instead of rT bcs rT is a reserved function
+to-report compute_r_T_proba [a-turtle]
   let nI1 compute_nI1 a-turtle
   let nPT1 compute_nPT1 a-turtle
   let proba K1 * ( (nPT1) / (nI1) )
