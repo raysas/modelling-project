@@ -105,8 +105,47 @@ to go
   ]
 
   ;; ----- transition rules for NIC -----
+  NICs-transitions  ask NICs with [mode = 1 OR mode = 2][
 
+    ifelse mode = 1 [
+      let N_neighbors get-Nneighbors self
+      let N count N_neighbors
 
+      let r_p 0
+      ifelse PT_type = 1
+      [ set r_p p1 radius ]
+      [ set r_p p2 radius count N_neighbors ]
+
+      let r random-float 1
+
+      ;; 1st condition: proliferate
+      ifelse r_p > 0 AND r_p < r AND N > 1 [
+
+        ;; -- chose a normal cell
+        let chosen_normal_cell one-of N_neighbors
+
+        ;; -- make 2 daughter cells
+        set age 0
+        let reference_PT self
+        ask chosen_normal_cell [set change_to reference_PT]
+      ]
+      ;; no proliferation: 2 possibilities
+      [
+        ;; 2nd condition: -> NT
+        ifelse age > age_threshold OR radius < R_t - delta_p [set mode 2]
+        ;; 3rd condition -> no change, just increase age
+        [set age age + 1]
+      ]
+    ]
+
+    ;;else, its mode 2
+    [
+      ;; 1st cond: -> Ne
+      if R_t - radius > delta_n + delta_p [ set mode 3 ]
+      ;; 2nd cond -> PT
+      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
+    ]
+  ]
   ;; ------------ changing the daughter cells of PT to mode 1 ------------
   ask NICs with [mode = 0][
     if is-NIC? change_to  [
@@ -116,6 +155,8 @@ to go
   ]
 
   ;; ------------------ transition rules for IC ---------------------
+  let successes 0
+  let failures 0
   ask ICs [
 
     let nPT1 compute_nPT1 self
@@ -149,6 +190,9 @@ to go
           let reference_IC self
           ask chosen_cell [ set change_to reference_IC ]
         ]
+
+        set successes successes + ( length killed_PTs )
+        set failures failures + ( nPT1 - (length killed_PTs) )
       ]
       ;;    <> b. else IC is NK
       [
@@ -163,6 +207,10 @@ to go
             set killed_PTs lput chosen_cell killed_PTs
           ]
         ]
+
+        set successes successes + (length killed_PTs)
+        set failures failures + ( 1 - (length killed_PTs) )
+
       ]
 
       ;; -- 3: pro tumor --
@@ -175,6 +223,7 @@ to go
         ]
         die
       ]
+
     ]
 
     ;; if no neighboring PT: perform random walk
@@ -200,6 +249,15 @@ to go
       ]
     ]
 
+  ]
+
+  let number_of_ICnewborns compute_num_newborns successes failures
+  if number_of_ICnewborns > 0 [
+    ask n-of round number_of_ICnewborns NICs with [mode = 0 AND change_to = nobody] [
+      print (word "num newborn is" number_of_ICnewborns "adding ICs" )
+      hatch-ICs 1 [ set mode random 2 ]
+      die
+    ]
   ]
 
   color-patches-based-on-cell-type
@@ -361,7 +419,7 @@ end
 to-report compute_r_T_proba [a-turtle]
   let nI1 compute_nI1 a-turtle
   let nPT1 compute_nPT1 a-turtle
-  let proba K1 * ( (nPT1) / (nI1) )
+  let proba K1 * ( (nPT1) / (nI1 + 0.01) )
   report proba
 end
 
@@ -393,6 +451,12 @@ to-report compute_k
   report countIC / countCells
 end
 
+to-report compute_num_newborns [v f]
+  let nPT_ countPT
+  let nT_ countT
+  let num (v - f) * ( nPT_ / nT_ )
+  report num
+end
 
 to-report countNe
   report count NICs with [mode = 3]
@@ -474,10 +538,10 @@ to save-params-csv [filename]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-387
-107
-700
-421
+295
+43
+808
+557
 -1
 -1
 5.0
@@ -490,10 +554,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--30
-30
--30
-30
+-50
+50
+-50
+50
 1
 1
 1
@@ -569,7 +633,7 @@ age_threshold
 age_threshold
 0
 50
-50.0
+14.0
 1
 1
 NIL
@@ -581,7 +645,7 @@ INPUTBOX
 275
 401
 K_initial
-0.005
+0.009
 1
 0
 Number

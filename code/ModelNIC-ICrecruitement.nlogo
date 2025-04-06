@@ -105,7 +105,7 @@ to go
   ]
 
   ;; ----- transition rules for NIC -----
-  ask NICs with [mode = 1 OR mode = 2][
+  NICs-transitions  ask NICs with [mode = 1 OR mode = 2][
 
     ifelse mode = 1 [
       let N_neighbors get-Nneighbors self
@@ -146,7 +146,6 @@ to go
       if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
     ]
   ]
-
   ;; ------------ changing the daughter cells of PT to mode 1 ------------
   ask NICs with [mode = 0][
     if is-NIC? change_to  [
@@ -156,6 +155,8 @@ to go
   ]
 
   ;; ------------------ transition rules for IC ---------------------
+  let successes 0
+  let failures 0
   ask ICs [
 
     let nPT1 compute_nPT1 self
@@ -189,6 +190,9 @@ to go
           let reference_IC self
           ask chosen_cell [ set change_to reference_IC ]
         ]
+
+        set successes successes + ( length killed_PTs )
+        set failures failures + ( nPT1 - (length killed_PTs) )
       ]
       ;;    <> b. else IC is NK
       [
@@ -203,6 +207,10 @@ to go
             set killed_PTs lput chosen_cell killed_PTs
           ]
         ]
+
+        set successes successes + (length killed_PTs)
+        set failures failures + ( 1 - (length killed_PTs) )
+
       ]
 
       ;; -- 3: pro tumor --
@@ -215,6 +223,7 @@ to go
         ]
         die
       ]
+
     ]
 
     ;; if no neighboring PT: perform random walk
@@ -240,6 +249,15 @@ to go
       ]
     ]
 
+  ]
+
+  let number_of_ICnewborns compute_num_newborns successes failures
+  if number_of_ICnewborns > 0 [
+    ask n-of round number_of_ICnewborns NICs with [mode = 0 AND change_to = nobody] [
+      print (word "num newborn is" number_of_ICnewborns "adding ICs" )
+      hatch-ICs 1 [ set mode random 2 ]
+      die
+    ]
   ]
 
   color-patches-based-on-cell-type
@@ -433,6 +451,12 @@ to-report compute_k
   report countIC / countCells
 end
 
+to-report compute_num_newborns [v f]
+  let nPT_ countPT
+  let nT_ countT
+  let num (v - f) * ( nPT_ / nT_ )
+  report num
+end
 
 to-report countNe
   report count NICs with [mode = 3]
@@ -516,8 +540,8 @@ end
 GRAPHICS-WINDOW
 295
 43
-808
-557
+708
+457
 -1
 -1
 5.0
@@ -530,10 +554,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--50
-50
--50
-50
+-40
+40
+-40
+40
 1
 1
 1
@@ -621,7 +645,7 @@ INPUTBOX
 275
 401
 K_initial
-0.05
+0.009
 1
 0
 Number

@@ -1,130 +1,95 @@
 breed [NICs NIC]
 breed [ICs IC]
 
-NICs-own [mode age radius PT_type change_neighbor] ;;type is strictly for NIC of mode 0 (1 mutant, 2 non-muta
-ICs-own [mode]
-turtles-own [N_neighbors]
+NICs-own [mode age radius PT_type change_to ]
 
-;; -- parameters
+;; ----------------------- parameters + related functions to set them -----------------------------------
 
-globals [ p0 phi0 a b Rmax K0 KI]
+globals [ p0 phi0 a b Rmax K0 K1 ;;--paramters for the simulation
+         R_t delta_p delta_n nNT nNe NPT nT nI GF NF n_nonmut n_mut ] ;;--parameteres that get updated every iteration
 
+;; --> used in setup to initialize simulation parameters (from table 3)
 to initialize_parameters
-  set p0 0.7
-  set phi0 0.06
-  set a 0.42
-  set b 0.11
-  set Rmax 37.5
-  set K0 0.5
-  set KI 0.2
+  set p0 0.7      set phi0 0.06      set a 0.42
+  set b 0.11      set Rmax 37.5      set K0 0.5
+  set K1 0.2
 end
+;; --> used in go to update the time dependent params that change at each tick
+to update_time_dependent_parameters
+  set R_t compute_R_t     set delta_p compute_delta_p     set delta_n compute_delta_n
+  set nNT countNT     set nNe countNe    set nPT countPT
+  set nT nNT + nNe + nPT
+  set GF nPT / nT                        set NF nNe / nT
+  set n_nonmut count NICs with [mode = 1 AND PT_type = 2]
+  set n_mut    count NICs with [mode = 1 AND PT_type = 1]
+end
+
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ---------------------------------- set up ------------------------------------------------------------
 
 to setup
   clear-all
-
+  if file-exists? "params.csv" [file-delete "params.csv"]
   initialize_parameters
 
   ;; --initializing all cells to NIC of mode 0
   ask patches [
     sprout-NICs 1 [
-      set mode 0
-      set age 0
-      set radius distancexy 0 0  ;; define radius here if needed
-      set size 0.5
-      set change_neighbor 0
+      set mode 0 set age 0 set radius distancexy 0 0 set size 0.5 set change_to nobody
     ]
   ]
 
+  ;; --setup initial PT in the center
   ask NICs [
     if radius < initial_radius [
       set mode 1
       let r random-float 1
-      ifelse r < Nmm
-      [set PT_type 2]
-      [set PT_type 1]
+      ifelse r < Nmm [set PT_type 2][set PT_type 1]
     ]
   ]
+
   color-patches-based-on-cell-type
-  show compute_R_t
   reset-ticks
 end
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; --------------------------------------- go -----------------------------------------------------------
 
 to go
 
-  let R_t compute_R_t
-  let delta_p compute_delta_p
-  let delta_n compute_delta_n
-  let r_p 0
+  update_time_dependent_parameters
 
-  ask NICs[
-      let neighbor_cells turtles-on neighbors
-      set N_neighbors neighbor_cells with [mode = 0]
-
-      ifelse PT_type = 1
-      [ set r_p p1 radius ]
-      [ set r_p p2 radius count N_neighbors ]
+  save-params-csv "params.csv"
+  save-params-csv (word "Nmm" Nmm "params.csv")
 
 
+  ;; ----- transition rules for NIC -----
+  NICs-transitions
 
+  ;; ------------ changing the daughter cells of PT to mode 1 ------------
+  ask NICs with [mode = 0][
+    if is-NIC? change_to  [
+      let sametype [PT_type] of change_to
+      set mode 1 set PT_type sametype set age 0 set change_to nobody
+    ] ;; daughter cell of PT
   ]
 
-  ask NICs with [mode = 1 OR mode = 2][
-    ifelse mode = 1 [
-
-      ;; 1st condition: proliferate
-      let r random-float 1
-      let N count N_neighbors
-      ifelse r_p > 0 AND r_p < r AND N > 1 [
-        ;; -- chose a normal cell
-        let chosen_normal_cell one-of N_neighbors
-
-        ;; -- make 2 daughter cells
-        ;;    1st the N cell
-        let mother_PT_type PT_type
-        ask chosen_normal_cell [
-          set change_neighbor 1
-          set age 0
-          set PT_type mother_PT_type
-
-        ]
-        ;;    2nd the current cell
-        set age 0
-      ]
-
-
-      [
-        ifelse age > age_threshold ;;2nd condition, -> NT
-        [set mode 2]
-        [set age age + 1] ;;3rd -> no change, becomes older
-      ]
-
-    ]
-
-
-    ;;else, its mode 2
-    [
-      if R_t - radius > delta_n + delta_p
-      [ set mode 3 ]
-
-    ]
-  ]
-
-  ask NICs with [mode = 0 ][
-    if change_neighbor = 1
-    [set mode 1]
-
-  ]
   color-patches-based-on-cell-type
-
   tick
 end
 
 
+;######################################## FUNCTIONS AND PROCEDURES ######################################
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------- coloring -------------------------------------------------
 
 to color-patches-based-on-cell-type
   ask NICs [
+    set hidden? true
     if mode = 0 [ask patch-here [set pcolor 103]]
     if mode = 1 [ask patch-here [set pcolor 105]]
     if mode = 2 [ask patch-here [set pcolor 15]]
@@ -132,20 +97,65 @@ to color-patches-based-on-cell-type
   ]
 
   ask ICs[
-    ask patch-here [set pcolor green ]
+    set hidden? true
+    ask patch-here [set pcolor yellow ]
   ]
 end
 
-to recruit-IC
-  let L sqrt count patches ;;number of rows
-  let choose_direction random-float 1
-  show choose_direction
-  let corner_patches patches with [ abs pxcor <= 5 and abs pycor <= 5 ]
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; -------------------------------------- transition rules ----------------------------------------------
+
+to NICs-transitions
+  ask NICs with [mode = 1 OR mode = 2][
+
+    ifelse mode = 1 [
+      let N_neighbors get-Nneighbors self
+      let N count N_neighbors
+
+      let r_p 0
+      ifelse PT_type = 1
+      [ set r_p p1 radius ]
+      [ set r_p p2 radius count N_neighbors ]
+
+      let r random-float 1
+
+      ;; 1st condition: proliferate
+      ifelse r_p > 0 AND r_p < r AND N > 1 [
+
+        ;; -- chose a normal cell
+        let chosen_normal_cell one-of N_neighbors
+
+        ;; -- make 2 daughter cells
+        set age 0
+        let reference_PT self
+        ask chosen_normal_cell [set change_to reference_PT]
+      ]
+      ;; no proliferation: 2 possibilities
+      [
+        ifelse age > age_threshold OR radius < R_t - delta_p
+        ;; 2nd condition: -> NT
+        [set mode 2]
+        ;; 3rd condition -> no change, just increase age
+        [set age age + 1]
+      ]
+    ]
+
+    ;;else, its mode 2
+    [
+      ;; 1st cond: -> Ne
+      if R_t - radius > delta_n + delta_p [ set mode 3 ]
+      ;; 2nd cond -> PT
+      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
+    ]
+  ]
 end
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; --------------------------------- computing parameters -----------------------------------------------
 
-
-
+;; ## probabilities ##
 to-report p1 [r]
   let proba p0 * (1 - (r / Rmax))
   report proba
@@ -155,18 +165,18 @@ to-report p2 [r num_neighboring_N]
   report proba
 end
 
+;; ## param on current state of the overall system ##
 to-report compute_R_t
   let value 0
   let counter 0
   ask NICs with [mode = 1 ] [
     let neighbor_cells turtles-on neighbors
-    let N count neighbor_cells with [mode = 0]
+    let N count neighbor_cells with [breed = NICs and mode = 0]
     if N >= 1 [
       set value value + radius
       set counter counter + 1
     ]
   ]
-
   report value / counter
 end
 
@@ -181,34 +191,65 @@ end
 
 
 to-report countNe
-  let c 0
-  ask NICs with [mode = 3 ]
-  [set c c + 1]
-  report c
+  report count NICs with [mode = 3]
 end
 to-report countPT
-  let c 0
-  ask NICs with [mode = 1 ]
-  [set c c + 1]
-  report c
+  report count NICs with [mode = 1]
 end
 to-report countNT
-  let c 0
-  ask NICs with [mode = 2 ]
-  [set c c + 1]
-  report c
+  report count NICs with [mode = 2]
+end
+to-report countT
+  report countNT + countNe + countPT
+end
+to-report countCells
+  report count patches
+end
+
+;; ## params on one turtle ##
+
+to-report get-Nneighbors [a-turtle]
+  let N_neighbors nobody
+  ask a-turtle [
+
+    let neighbor_cells turtles-on neighbors
+    set N_neighbors neighbor_cells with [breed = NICs and mode = 0 and change_to = nobody ]
+  ]
+  report N_neighbors
+end
+
+
+
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------ saving parameters -----------------------------------------------
+
+
+to save-params-csv [filename]
+  ;; -- savin some params to csv
+  let iteration ticks
+  ifelse not file-exists? filename [
+    file-open filename
+    file-print "Iteration, Rt, delta p, delta n, nNT, nNe, nPT, nT, nI, nonmut, mut , GF , NF "
+  ]
+   [
+    file-open filename
+  ]
+
+  file-print (word iteration "," R_t "," delta_p "," delta_n "," nNT "," nNe "," nPT "," nT "," nI "," n_nonmut "," n_mut ","  GF ","  NF )
+  file-close
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-313
-26
-836
-552
+213
+39
+726
+553
 -1
 -1
-3.3
+5.0
 1
-10
+1
 1
 1
 1
@@ -216,10 +257,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--30
-30
--30
-30
+-50
+50
+-50
+50
 1
 1
 1
@@ -295,18 +336,18 @@ age_threshold
 age_threshold
 0
 50
-10.0
+23.0
 1
 1
 NIL
 HORIZONTAL
 
 PLOT
-1278
-38
-2154
-866
-Number of PT, NT, Ne
+848
+73
+1192
+416
+plot 1
 NIL
 NIL
 0.0
@@ -314,12 +355,12 @@ NIL
 0.0
 10.0
 true
-true
+false
 "" ""
 PENS
-"Ne" 1.0 0 -2674135 true "" "plot count NICs with [ mode = 3 ]"
-"NT" 1.0 0 -987046 true "" "plot count NICs with [ mode = 2 ]"
-"PT" 1.0 0 -13345367 true "" "plot count NICs with [ mode = 1 ]"
+"default" 1.0 0 -13791810 true "" "plot countPT "
+"pen-1" 1.0 0 -1184463 true "" "plot countNT"
+"pen-2" 1.0 0 -2674135 true "" "plot countNe"
 
 @#$#@#$#@
 ## WHAT IS IT?
