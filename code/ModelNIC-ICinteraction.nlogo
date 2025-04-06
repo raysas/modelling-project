@@ -79,6 +79,22 @@ to go
 
   save-params-csv "params.csv"
 
+  ask NICs with [mode = 0 ][
+      if is-IC? change_neighbor [
+      let my-x xcor
+      let my-y ycor
+      let IC-x [xcor] of change_neighbor
+      let IC-y [ycor] of change_neighbor
+      let IC-mode [mode] of change_neighbor
+      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
+      ask patch IC-x IC-y [
+        sprout-NICs 1 [set mode 0 set radius distancexy 0 0 set change_neighbor nobody]
+        ask ICs-here [ die ]
+      ]
+      die
+    ]
+  ]
+
   ask turtles [
     let neighbor_cells turtles-on neighbors
     set N_neighbors neighbor_cells with [breed = NICs and mode = 0]
@@ -191,8 +207,8 @@ to go
       if r_walk < r
      [
         ifelse maximum = biased
-        [set chosen_normal_cell min-one-of N_neighbors [radius]] ;; move toward center
-        [set chosen_normal_cell one-of N_neighbors
+        [set chosen_normal_cell min-one-of N_neighbors with [change_neighbor = nobody] [radius]] ;; move toward center
+        [set chosen_normal_cell one-of N_neighbors with [change_neighbor = nobody]
           show True] ;; move randomly
       ]
 
@@ -203,26 +219,11 @@ to go
 
   ]
 
-
   ask NICs with [mode = 0][
     if is-NIC? change_neighbor  [
       let sametype [PT_type] of change_neighbor
       set mode 1 set PT_type sametype set age 0
     ] ;; daughter cell of PT
-
-    if is-IC? change_neighbor [
-      let my-x xcor
-      let my-y ycor
-      let IC-x [xcor] of change_neighbor
-      let IC-y [ycor] of change_neighbor
-      let IC-mode [mode] of change_neighbor
-      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
-      ask patch IC-x IC-y [
-        sprout-NICs 1 [set mode 0 set radius distancexy 0 0]
-        ask ICs-here [ die ]
-      ]
-      die
-    ]
   ]
   color-patches-based-on-cell-type
   tick
@@ -429,8 +430,8 @@ end
 GRAPHICS-WINDOW
 387
 107
-902
-623
+900
+621
 -1
 -1
 5.0
