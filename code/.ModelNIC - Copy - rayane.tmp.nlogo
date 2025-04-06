@@ -1,45 +1,331 @@
-breed [wolves wolf]
-breed [sheep a-sheep]
+breed [NICs NIC]
+breed [ICs IC]
 
-to set-up
+NICs-own [mode age radius PT_type change_neighbor] ;;type is strictly for NIC of mode 0 (1 mutant, 2 non-muta
+ICs-own [mode]
+turtles-own [N_neighbors]
+
+;; ----------------------- parameters + related functions to set them -----------------------------------
+
+globals [ p0 phi0 a b Rmax K0 KI ;;--paramters for the simulation
+         R_t delta_p delta_n nNT nNe NPT nT nI GF NF n_nonmut n_mut ] ;;--parameteres that get updated every iteration
+
+;; --> used in setup to initialize simulation parameters (from table 3)
+to initialize_parameters
+  set p0 0.7      set phi0 0.06      set a 0.42
+  set b 0.11      set Rmax 37.5      set K0 0.5
+  set KI 0.2
+end
+;; --> used in go to update the time dependent params that change at each tick
+to update_time_dependent_parameters
+  set R_t compute_R_t     set delta_p compute_delta_p     set delta_n compute_delta_n
+  set nNT countNT     set nNe countNe    set nPT countPT
+  set nT nNT + nNe + nPT                 set nI countIC
+  set GF nPT / nT                        set NF nNe / nT
+  set n_nonmut count NICs with [mode = 1 AND PT_type = 2]
+  set n_mut    count NICs with [mode = 1 AND PT_type = 1]
+end
+
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ---------------------------------- set up ------------------------------------------------------------
+
+to setup
   clear-all
-  create-sheep 20 [
-    set color white
-    setxy random-xcor random-ycor
+  if file-exists? "params.csv" [file-delete "params.csv"]
+  initialize_parameters
+
+  ;; --initializing all cells to NIC of mode 0
+  ask patches [
+    sprout-NICs 1 [
+      set mode 0 set age 0 set radius distancexy 0 0 set size 0.5 set change_neighbor nobody
+    ]
   ]
-  create-wolves 20 [
-    set color gray
-    setxy random-xcor random-ycor
+
+  ;; --setup initial PT in the center
+  ask NICs [
+    if radius < initial_radius [
+      set mode 1
+      let r random-float 1
+      ifelse r < Nmm [set PT_type 2][set PT_type 1]
+    ]
   ]
+
+  ;; --setup ICs in a random corner
+  setup_ICs
+
+  color-patches-based-on-cell-type
   reset-ticks
 end
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; --------------------------------------- go -----------------------------------------------------------
+
 to go
+
+  update_time_dependent_parameters ;;--rayane: this function updates variables like nNT nNe nI.. which are made global, so at each iteration they got updated automatically and can access them wherever inside go
+  let r_p 0
+
+  save-params-csv "params.csv"
+
   ask turtles [
-    let sheep-neighbors count-neighbors-of-type sheep
-    let wolf-neighbors count-neighbors-of-type wolves
-    show (word "I am a " breed " and have " sheep-neighbors " sheep and " wolf-neighbors " wolves nearby.")
+    let neighbor_cells turtles-on neighbors
+    set N_neighbors neighbor_cells with [breed = NICs and mode = 0]
   ]
+
+  ask NICs[
+      ifelse PT_type = 1
+      [ set r_p p1 radius ]
+      [ set r_p p2 radius count N_neighbors ]
+  ]
+
+  ask NICs with [mode = 1 OR mode = 2][
+    ifelse mode = 1 [
+
+      ;; 1st condition: proliferate
+      let r random-float 1
+      let N count N_neighbors
+      ifelse r_p > 0 AND r_p < r AND N > 1 [
+        ;; -- chose a normal cell
+        let chosen_normal_cell one-of N_neighbors
+
+        ;; -- make 2 daughter cells
+        set age 0
+        let reference_PT self
+        ask chosen_normal_cell [set change_neighbor reference_PT]
+      ]
+      [
+        ifelse age > age_threshold ;;2nd condition, -> NT
+        [set mode 2]
+        [set age age + 1] ;;3rd -> no change, becomes older
+    ]]
+    ;;else, its mode 2
+    [
+      if R_t - radius > delta_n + delta_p
+      [ set mode 3 ]
+    ]
+  ]
+
+
+  ;; ICs random walk
+  let unbiased countT / countCells
+  let biased countPT / countT
+  let maximum max list unbiased biased
+  let r_walk compute_k * maximum
+  ;;print ( word  "this is r walk"  r_walk )
+
+  ask ICs [
+    let r random-float 1
+    let chosen_normal_cell nobody
+    ifelse maximum = biased
+    ;; -- rayane note: swapping doesnt enter block -> no change (r walk is tiny) (maybe rwalk is probability of walking randomly since it s that small, else walk in directed fashoin)
+    [if r_walk < r [set chosen_normal_cell min-one-of N_neighbors [radius]]] ;; move toward center
+    [if r_walk < r [set chosen_normal_cell one-of N_neighbors]] ;; move randomly
+    if chosen_normal_cell != nobody[
+    let reference_IC self
+      ask chosen_normal_cell [set change_neighbor reference_IC]]
+        ;;print (word " reference IC is " [who] of reference_IC )]
+
+  ]
+
+  ask NICs with [mode = 0][
+    if is-NIC? change_neighbor  [
+      let sametype [PT_type] of change_neighbor
+      set mode 1 set PT_type sametype set age 0
+    ] ;; daughter cell of PT
+
+    if is-IC? change_neighbor [
+      ;;print (word "test, change_neighbor is really IC")
+      let my-x xcor
+      let my-y ycor
+      let IC-x [xcor] of change_neighbor
+      let IC-y [ycor] of change_neighbor
+      let IC-mode [mode] of change_neighbor
+      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
+      ;;die
+      ask patch IC-x IC-y [
+        sprout-NICs 1 [set mode 0 set radius distancexy 0 0]
+        ask ICs-here [ die ]
+
+      ]
+    ]
+  ]
+  color-patches-based-on-cell-type
   tick
 end
 
-to-report count-neighbors-of-type [agent-type]
-  let nearby-turtles turtles-on neighbors
-  show turtles-on neighbors
-  report count nearby-turtles with [breed = agent-type]
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------ setup ICs -------------------------------------------------------
+
+
+to setup_ICs
+  let ncells count patches
+  let total_ICs floor (k * ncells)
+
+  let corner random 4
+  let x-min 0
+  let x-max 0
+  let y-min 0
+  let y-max 0
+  let boundary ceiling (sqrt total_ICs)
+
+  ;; Define the bounds of the chosen corner
+  if corner = 0 [ ; bottom-left
+    set x-min min-pxcor
+    set x-max min-pxcor + boundary
+    set y-min min-pycor
+    set y-max min-pycor + boundary
+  ]
+  if corner = 1 [ ; bottom-right
+    set x-min max-pxcor - boundary
+    set x-max max-pxcor
+    set y-min min-pycor
+    set y-max min-pycor + boundary
+  ]
+  if corner = 2 [ ; top-left
+    set x-min min-pxcor
+    set x-max min-pxcor + boundary
+    set y-min max-pycor - boundary
+    set y-max max-pycor
+  ]
+  if corner = 3 [ ; top-right
+    set x-min max-pxcor - boundary
+    set x-max max-pxcor
+    set y-min max-pycor - boundary
+    set y-max max-pycor
+  ]
+
+  ;; Get random patches from that corner
+  let corner-patches patches with [
+    pxcor >= x-min and pxcor <= x-max and
+    pycor >= y-min and pycor <= y-max
+  ]
+
+  let chosen-patches n-of total_ICs corner-patches
+
+  ;; Create ICs on those patches, replacing anyone there
+  ask chosen-patches [
+    ;; Remove any other agent on this patch
+    ask turtles-here [ die ]
+
+    ;; Create a new IC here
+    sprout-ICs 1 [
+      set mode random 2
+    ]
+  ]
 end
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------- coloring -------------------------------------------------
+
+to color-patches-based-on-cell-type
+  ask NICs [
+    set hidden? true
+    if mode = 0 [ask patch-here [set pcolor 103]]
+    if mode = 1 [ask patch-here [set pcolor 105]]
+    if mode = 2 [ask patch-here [set pcolor 15]]
+    if mode = 3 [ask patch-here [set pcolor 13]]
+  ]
+
+  ask ICs[
+    set hidden? true
+    ask patch-here [set pcolor yellow ]
+  ]
+end
+
+
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; --------------------------------- computing parameters -----------------------------------------------
+
+to-report p1 [r]
+  let proba p0 * (1 - (r / Rmax))
+  report proba
+end
+to-report p2 [r num_neighboring_N]
+  let proba phi0 * num_neighboring_N * (1 - (r / Rmax))
+  report proba
+end
+
+
+to-report compute_R_t
+  let value 0
+  let counter 0
+  ask NICs with [mode = 1 ] [
+    let neighbor_cells turtles-on neighbors
+    let N count neighbor_cells with [breed = NICs and mode = 0]
+    if N >= 1 [
+      set value value + radius
+      set counter counter + 1
+    ]
+  ]
+  report value / counter
+end
+
+to-report compute_delta_n
+  let value a * compute_R_t ^ (2 / 3)
+  report value
+end
+to-report compute_delta_p
+  let value b * compute_R_t ^ (2 / 3)
+  report value
+end
+
+to-report compute_k
+  report countIC / countCells
+end
+
+
+to-report countNe
+  report count NICs with [mode = 3]
+end
+to-report countPT
+  report count NICs with [mode = 1]
+end
+to-report countNT
+  report count NICs with [mode = 2]
+end
+to-report countT
+  report countNT + countNe + countPT
+end
+to-report countCells
+  report count patches
+end
+to-report countIC
+  report count ICs
+end
+
+
+
+
+to save-params-csv [filename]
+  ;; -- savin some params to csv
+  let iteration ticks
+  ifelse not file-exists? filename [
+    file-open filename
+    file-print "Iteration, Rt, delta p, delta n, nNT, nNe, nPT, nT, nI, nonmut, mut , GF , NF "
+  ]
+   [
+    file-open filename
+  ]
+
+  file-print (word iteration "," R_t "," delta_p "," delta_n "," nNT "," nNe "," nPT "," nT "," nI "," n_nonmut "," n_mut ","  GF ","  NF )
+  file-close
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
-210
-10
-647
-448
+387
+107
+900
+621
 -1
 -1
-13.0
+5.0
 1
-10
+1
 1
 1
 1
@@ -47,23 +333,23 @@ GRAPHICS-WINDOW
 1
 1
 1
--16
-16
--16
-16
-0
-0
+-50
+50
+-50
+50
+1
+1
 1
 ticks
 30.0
 
 BUTTON
-69
-81
-134
-114
+80
+128
+143
+161
 NIL
-set-up
+setup
 NIL
 1
 T
@@ -74,14 +360,40 @@ NIL
 NIL
 1
 
+SLIDER
+25
+69
+197
+102
+Nmm
+Nmm
+0
+1
+1.0
+0.1
+1
+NIL
+HORIZONTAL
+
+INPUTBOX
+93
+204
+159
+268
+initial_radius
+3.0
+1
+0
+Number
+
 BUTTON
-97
-161
-160
-194
+71
+291
+134
+324
 NIL
-go\n
-NIL
+go
+T
 1
 T
 OBSERVER
@@ -90,6 +402,32 @@ NIL
 NIL
 NIL
 1
+
+SLIDER
+26
+28
+198
+61
+age_threshold
+age_threshold
+0
+50
+10.0
+1
+1
+NIL
+HORIZONTAL
+
+INPUTBOX
+56
+341
+275
+401
+K
+0.005
+1
+0
+Number
 
 @#$#@#$#@
 ## WHAT IS IT?
