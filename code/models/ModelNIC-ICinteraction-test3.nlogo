@@ -1,8 +1,19 @@
 breed [NICs NIC]
 breed [ICs IC]
 
-NICs-own [mode age radius PT_type change_to ]
+NICs-own [mode age radius PT_type change_neighbor r_p] ;;type is strictly for NIC of mode 0 (1 mutant, 2 non-muta
 ICs-own [mode]
+turtles-own [N_neighbors]
+
+
+;; in this script have added:
+;; * MADE r_p AN ATTRIBUE (important to stop error and fix it not to go beyound R_max)
+;; -- pseudocode on interactions
+;; * functions to compute rI and rT
+;; * function to get neighboring PT and another for nieghboring IC (takes agent as input)
+;; * functions to compute nPT1 and nI1 from them
+;; -- in terms of simulation, same as modelNIC-copy-rayane so:
+;; * only commented die to make them move (mvt is still directed, no random component)
 
 ;; ----------------------- parameters + related functions to set them -----------------------------------
 
@@ -37,7 +48,7 @@ to setup
   ;; --initializing all cells to NIC of mode 0
   ask patches [
     sprout-NICs 1 [
-      set mode 0 set age 0 set radius distancexy 0 0 set size 0.5 set change_to nobody
+      set mode 0 set age 0 set radius distancexy 0 0 set size 0.5 set change_neighbor nobody
     ]
   ]
 
@@ -63,74 +74,174 @@ end
 
 to go
 
-  update_time_dependent_parameters
+  update_time_dependent_parameters ;;--rayane: this function updates variables like nNT nNe nI.. which are made global, so at each iteration they got updated automatically and can access them wherever inside go
+;  let r_p 0 ;; rayane note: no need for this anymore | set as attribute
 
   save-params-csv "params.csv"
 
-  ;; ---- change normal to IC (IC moved from last iteration) -----
-  ask NICs with [mode = 0 ][
-      if is-IC? change_to [
-      let my-x xcor
-      let my-y ycor
-      let IC-x [xcor] of change_to
-      let IC-y [ycor] of change_to
-      let IC-mode [mode] of change_to
-      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
-      ask patch IC-x IC-y [
-        sprout-NICs 1 [set mode 0 set radius distancexy 0 0 set change_to nobody]
-        ask ICs-here [ die ]
+  ask turtles [
+    let neighbor_cells turtles-on neighbors
+    set N_neighbors neighbor_cells with [breed = NICs and mode = 0]
+  ]
+
+  ask NICs[
+      ifelse PT_type = 1
+      [ set r_p p1 radius ]
+      [ set r_p p2 radius count N_neighbors ]
+  ]
+
+  ask NICs with [mode = 1 OR mode = 2][
+    ifelse mode = 1 [
+
+      ;; 1st condition: proliferate
+      let r random-float 1
+      let N count N_neighbors
+      ifelse r_p > 0 AND r_p < r AND N > 1 [
+
+        ;; -- chose a normal cell
+        let chosen_normal_cell one-of N_neighbors
+
+        ;; -- make 2 daughter cells
+        set age 0
+        let reference_PT self
+        ask chosen_normal_cell [set change_neighbor reference_PT]
       ]
-      die
+      [
+        ifelse age > age_threshold OR radius < R_t - delta_p ;;2nd condition, -> NT
+        [set mode 2]
+        [set age age + 1] ;;3rd -> no change, becomes older
+    ]]
+    ;;else, its mode 2
+    [
+      if R_t - radius > delta_n + delta_p [ set mode 3 ]
+      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
     ]
   ]
 
-  ;; ----- transition rules for NIC -----
-  NICs-transitions
 
-  ;; ------------ changing the daughter cells of PT to mode 1 ------------
-  ask NICs with [mode = 0][
-    if is-NIC? change_to  [
-      let sametype [PT_type] of change_to
-      set mode 1 set PT_type sametype set age 0 set change_to nobody
-    ] ;; daughter cell of PT
-  ]
+;  ;; ICs random walk
+  let unbiased countT / countCells      ;;-- alpha: local tumor density (rayane - just testing)
+  let biased countPT / countT           ;;-- beta:  tumor-permeable direction signal
 
-  ;; ------------------ transition rules for IC ---------------------
+  let maximum max list unbiased biased
+
+  let r_walk compute_k * maximum     ;;-- commenting max ratio
+
+  ;;-- rayane: troubleshooting
+;  print (word "nT/ncell2 =" unbiased " nPT/nT =" biased)
+;  print (word "r walk is :" r_walk )
+
   ask ICs [
+
+    ;################## INTERACTIONS #######################
+    ; pseudocode:
+
+    ; # if IC meet PT (if there exist one PT in neighb)
+
+    ;     -- 1: antitumor (proba rI)
+
+    ;     # PT1 <- save the nighboring PT here (essential to save a list for 1. know to pick randomly from it and 2. count nub of successes by incrementing the number of neighb PT killed )
+    ;     # randomly_chosen_PT <- choose random PT from list to move to at the end (and NK only kills one too)
+    ;     # if current IC mode is 1 (CTL):
+    ;     #    for each PT in PT1: set mode 4 (maybe define unstable state as mode 4)
+    ;     # else (mode = 0)
+    ;     #    set randomly_chosen_PT's mode to 4
+    ;     # move to randomly_chosen_PT position
+
+    ;     -- 2: neutral
+
+    ;     # no change, stays in same state
+
+    ;     -- 3: protumor (proba rT)
+    ;     # change breed to NIC, mode to 0 (becomes empty)
+
+    ; (considering order of 1 3 2)
+
+    ; # else no neighboring PT
+    ;    # keep on random walking
+
+    ; ---------------------------------------------------------
+    ; NOTE: can make this inside ask ICs directly, check condition if there is neighb PT (maybe when implemented compute_nPT1 check if nPT1>0)
+    ;       if true -> do the interaction block
+    ;       else -> do the random walk block (thats already implemented)
+    ;
+    ;  also note, considering implementing a function called regularize_unstable, that resets all unstable NIC states (defined maybe as state 4) to 0
+    ;             this is if we wanna perform the rest in a next iteration
+    ; ---------------------------------------------------------
+
+    ;###########################################################
 
     let nPT1 compute_nPT1 self
     let nI1 compute_nI1 self
 
     ifelse nPT1 > 0 ;; --> if true perform interaction transition rules, else random walk
+
     [
-      ;; -- 1: anti tumor --
-      let PT1 get-PT1 self
+      ;; --1: antitumor
+      let r random-float 1
+      if r < rI_proba
+        [
+          set PT1 get-PT1 self
+          let PT_index random nPT1
+          let randomly_chosen_PT n-th PT_index PT1
+          ; ...
+        ]
+
+      ;; --3: pro-tumor
+      let r random-float 1
+      if r < rT_proba
+        [
+            let new-nic hatch-NICs 1 [ ;;--> creating a new empty cell in the same place
+            setxy [xcor] of myself [ycor] of myself
+            set mode 0
+          ]
+          die  ; remove the original IC
+        ]
+
+      ;; --2 no change
+
     ]
 
     [ ;; if no neighboring PT: perform random walk
-      let N_neighbors get-Nneighbors self
-
-      let unbiased countT / countCells
-      let biased countPT / countT
-      let maximum max list unbiased biased
-      let r_walk compute_k * maximum
-
       let r random-float 1
       let chosen_normal_cell nobody
-      if r_walk < r[
+
+      if r_walk < r
+     [
         ifelse maximum = biased
         [set chosen_normal_cell min-one-of N_neighbors [radius]] ;; move toward center
-        [set chosen_normal_cell one-of N_neighbors] ;; move randomly
+        [set chosen_normal_cell one-of N_neighbors
+          show True] ;; move randomly
       ]
 
       if chosen_normal_cell != nobody[
         let reference_IC self
-        ask chosen_normal_cell [set change_to reference_IC]
-      ]
+        ask chosen_normal_cell [set change_neighbor reference_IC]]
     ]
 
   ]
 
+
+  ask NICs with [mode = 0][
+    if is-NIC? change_neighbor  [
+      let sametype [PT_type] of change_neighbor
+      set mode 1 set PT_type sametype set age 0
+    ] ;; daughter cell of PT
+
+    if is-IC? change_neighbor [
+      let my-x xcor
+      let my-y ycor
+      let IC-x [xcor] of change_neighbor
+      let IC-y [ycor] of change_neighbor
+      let IC-mode [mode] of change_neighbor
+      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
+      ask patch IC-x IC-y [
+        sprout-NICs 1 [set mode 0 set radius distancexy 0 0]
+        ask ICs-here [ die ]
+      ]
+      die
+    ]
+  ]
   color-patches-based-on-cell-type
   tick
 end
@@ -142,7 +253,7 @@ end
 
 to setup_ICs
   let ncells count patches
-  let total_ICs floor (k_initial * ncells)
+  let total_ICs floor (k * ncells)
 
   let corner random 4
   let x-min 0
@@ -197,8 +308,6 @@ to setup_ICs
   ]
 end
 
-;######################################## FUNCTIONS AND PROCEDURES ######################################
-
 ;; ------------------------------------------------------------------------------------------------------
 ;; ------------------------------------------------------------------------------------------------------
 ;; ------------------------------------------- coloring -------------------------------------------------
@@ -218,53 +327,6 @@ to color-patches-based-on-cell-type
   ]
 end
 
-;; ------------------------------------------------------------------------------------------------------
-;; ------------------------------------------------------------------------------------------------------
-;; -------------------------------------- transition rules ----------------------------------------------
-
-to NICs-transitions
-  ask NICs with [mode = 1 OR mode = 2][
-
-    ifelse mode = 1 [
-      let N_neighbors get-Nneighbors self
-      let N count N_neighbors
-
-      let r_p 0
-      ifelse PT_type = 1
-      [ set r_p p1 radius ]
-      [ set r_p p2 radius count N_neighbors ]
-
-      let r random-float 1
-
-      ;; 1st condition: proliferate
-      ifelse r_p > 0 AND r_p < r AND N > 1 [
-
-        ;; -- chose a normal cell
-        let chosen_normal_cell one-of N_neighbors
-
-        ;; -- make 2 daughter cells
-        set age 0
-        let reference_PT self
-        ask chosen_normal_cell [set change_to reference_PT]
-      ]
-      ;; no proliferation: 2 possibilities
-      [
-        ;; 2nd condition: -> NT
-        ifelse age > age_threshold OR radius < R_t - delta_p [set mode 2]
-        ;; 3rd condition -> no change, just increase age
-        [set age age + 1]
-      ]
-    ]
-
-    ;;else, its mode 2
-    [
-      ;; 1st cond: -> Ne
-      if R_t - radius > delta_n + delta_p [ set mode 3 ]
-      ;; 2nd cond -> PT
-      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
-    ]
-  ]
-end
 
 ;; ------------------------------------------------------------------------------------------------------
 ;; ------------------------------------------------------------------------------------------------------
@@ -344,35 +406,16 @@ end
 
 ;; ## params on one turtle ##
 
-to-report get-Nneighbors [a-turtle]
-  let N_neighbors nobody
-  ask a-turtle [
-
-    let neighbor_cells turtles-on neighbors
-    set N_neighbors neighbor_cells with [breed = NICs and mode = 0 and change_to = nobody ]
-  ]
-  report N_neighbors
-end
-
-
-
 to-report get-PT1 [a-turtle]  ;; takes and agent and returns teh list of neighboring PT
-  let PT_neighbors nobody
-  ask a-turtle [
-
-    let neighbor_cells turtles-on neighbors
-    set PT_neighbors neighbor_cells with [breed = NICs and mode = 1 ]
-  ]
+  ;; !!!! considers neighboring empty cells (NIC mode 0) that have change state to 1 !!!!
+  let neighbor_cells turtles-on [patch-here] of a-turtle  ;; gets the neighboring turtles of the given turtle
+  let PT_neighbors neighbor_cells with [(breed = NICs and mode = 1) OR (breed = NICs and mode = 0 and is-agent? change_neighbor and is-NIC? change_neighbor and [mode] of change_neighbor = 1)]
   report PT_neighbors
 end
 to-report get-I1 [a-turtle]  ;; takes and agent and returns the list of neighboring IC
-  let I_neighbors nobody
-  ask a-turtle [
-
-    let neighbor_cells turtles-on neighbors
-    set I_neighbors neighbor_cells with [breed = ICs ]
-  ]
-  report I_neighbors
+  let neighbor_cells turtles-on [patch-here] of a-turtle  ;; gets the neighboring turtles of the given turtle
+  let IC_neighbors neighbor_cells with [breed = ICs ]
+  report IC_neighbors
 end
 
 to-report compute_nPT1 [a-turtle]
@@ -405,8 +448,8 @@ end
 GRAPHICS-WINDOW
 387
 107
-900
-621
+902
+623
 -1
 -1
 5.0
@@ -509,7 +552,7 @@ INPUTBOX
 341
 275
 401
-K_initial
+K
 0.005
 1
 0
