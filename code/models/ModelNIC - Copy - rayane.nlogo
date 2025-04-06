@@ -108,25 +108,33 @@ to go
   ]
 
 
-  ;; ICs random walk
-  let unbiased countT / countCells
-  let biased countPT / countT
+;  ;; ICs random walk
+  let unbiased countT / countCells      ;;-- alpha: local tumor density (rayane - just testing)
+  let biased countPT / countT           ;;-- beta:  tumor-permeable direction signal
+
+
+;  let w biased / ( biased - unbiased )  ;;-- rayane: bias, we'll use this in the probability (didnt work)
+
   let maximum max list unbiased biased
-  let r_walk compute_k * maximum
-  ;;print ( word  "this is r walk"  r_walk )
+
+  let r_walk compute_k * ( unbiased / biased )      ;;-- commenting max ratio
+
+  ;;-- rayane: troubleshooting
+  print (word "nT/ncell2 =" unbiased " nPT/nT =" biased)
+  print (word "r walk is :" r_walk )
 
   ask ICs [
     let r random-float 1
     let chosen_normal_cell nobody
+
+    ;;-- rayane: the problem is its always gonna be biased
     ifelse maximum = biased
-    ;; -- rayane note: swapping doesnt enter block -> no change (r walk is tiny) (maybe rwalk is probability of walking randomly since it s that small, else walk in directed fashoin)
     [if r_walk < r [set chosen_normal_cell min-one-of N_neighbors [radius]]] ;; move toward center
     [if r_walk < r [set chosen_normal_cell one-of N_neighbors]] ;; move randomly
+
     if chosen_normal_cell != nobody[
     let reference_IC self
       ask chosen_normal_cell [set change_neighbor reference_IC]]
-        ;;print (word " reference IC is " [who] of reference_IC )]
-
   ]
 
   ask NICs with [mode = 0][
