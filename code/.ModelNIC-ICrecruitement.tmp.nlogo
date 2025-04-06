@@ -2,7 +2,7 @@ breed [NICs NIC]
 breed [ICs IC]
 
 NICs-own [mode age radius PT_type change_to ]
-ICs-own [mode]
+ICs-own [mode radius]
 
 ;; ----------------------- parameters + related functions to set them -----------------------------------
 
@@ -75,7 +75,7 @@ to go
       let IC-x [xcor] of change_to
       let IC-y [ycor] of change_to
       let IC-mode [mode] of change_to
-      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
+      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode set radius distancexy 0 0]]
       ask patch IC-x IC-y [
         sprout-NICs 1 [set mode 0 set radius distancexy 0 0 set change_to nobody]
         ask ICs-here [ die ]
@@ -93,7 +93,7 @@ to go
       let IC-x [xcor] of change_to
       let IC-y [ycor] of change_to
       let IC-mode [mode] of change_to
-      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
+      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode set radius distancexy 0 0]]
       ask patch IC-x IC-y [
         sprout-NICs 1 [set mode 0 set radius distancexy 0 0 set change_to nobody]
         ask ICs-here [ die ]
@@ -177,7 +177,7 @@ to go
         ask PT1 [
           let r random-float 1
 
-          if r < r_I_proba [ ;; -- PT cell killed
+          if r > r_I_proba [ ;; -- PT cell killed
             set mode 4 ;;-- defining mode 4: unstable state -> becomes normal/free cell
             set killed_PTs lput self killed_PTs
           ]
@@ -199,7 +199,7 @@ to go
         let chosen_cell one-of PT1
         let r random-float 1
 
-        if r < r_I_proba [
+        if r > r_I_proba [
           let reference_IC self
           ask chosen_cell [
             set mode 4
@@ -232,13 +232,18 @@ to go
 
       let unbiased countT / countCells
       let biased countPT / countT
-      let maximum max list unbiased biased
-      let r_walk compute_k * maximum
+      let r_walk 0
+
+      let is_biased radius > compute_R_t
+
+      ifelse is_biased
+      [set r_walk compute_k * biased]
+      [set r_walk compute_k * unbiased]
 
       let r random-float 1
       let chosen_normal_cell nobody
       if r_walk < r[
-        ifelse maximum = biased
+        ifelse is_biased
         [set chosen_normal_cell min-one-of N_neighbors [radius]] ;; move toward center
         [set chosen_normal_cell one-of N_neighbors] ;; move randomly
       ]
@@ -254,8 +259,8 @@ to go
   let number_of_ICnewborns compute_num_newborns successes failures
   if number_of_ICnewborns > 0 [
     ask n-of round number_of_ICnewborns NICs with [mode = 0 AND change_to = nobody] [
-      print (word "num newborn is" number_of_ICnewborns "adding ICs" )
-      hatch-ICs 1 [ set mode random 2 ]
+
+      hatch-ICs 1 [ set mode random 2 set radius distancexy 0 0]
       die
     ]
   ]
@@ -322,6 +327,7 @@ to setup_ICs
     ;; Create a new IC here
     sprout-ICs 1 [
       set mode random 2
+      set radius distancexy 0 0
     ]
   ]
 end
@@ -346,6 +352,7 @@ to color-patches-based-on-cell-type
     ask patch-here [set pcolor yellow ]
   ]
 end
+
 
 ;; ------------------------------------------------------------------------------------------------------
 ;; ------------------------------------------------------------------------------------------------------
@@ -540,8 +547,8 @@ end
 GRAPHICS-WINDOW
 295
 43
-808
-557
+708
+457
 -1
 -1
 5.0
@@ -554,10 +561,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--50
-50
--50
-50
+-40
+40
+-40
+40
 1
 1
 1
