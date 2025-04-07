@@ -84,7 +84,7 @@ to go
       ]
       die
     ]
-  ]
+  ] color-patches-based-on-cell-type
 
   ;; ----- change unstable cells to normal, and replace by IC if IC has to move to it ----
   ask NICs with [mode = 4 ][
@@ -104,10 +104,11 @@ to go
     ]
     ;; 2. or else unstable becomes normal
     [set mode 0]
-  ]
+  ] color-patches-based-on-cell-type
 
   ;; ----- transition rules for NIC -----
   NICs-transitions
+  color-patches-based-on-cell-type
 
   ;; ------------ changing the daughter cells of PT to mode 1 ------------
   ask NICs with [mode = 0][
@@ -116,6 +117,7 @@ to go
       set mode 1 set PT_type sametype set age 0 set change_to nobody
     ] ;; daughter cell of PT
   ]
+  color-patches-based-on-cell-type
 
   ;; ------------------ transition rules for IC ---------------------
   let successes 0
@@ -178,7 +180,7 @@ to go
 
       ;; -- 3: pro tumor --
       let r random-float 1
-      if empty? killed_PTs AND r < r_T_proba [
+      if empty? killed_PTs AND r > r_T_proba [
         hatch-NICs 1 [
           set mode 0
           set radius distancexy 0 0
@@ -217,7 +219,7 @@ to go
       ]
     ]
 
-  ]
+  ] color-patches-based-on-cell-type
 
   let number_of_ICnewborns compute_num_newborns successes failures
   if number_of_ICnewborns > 0 [
@@ -304,7 +306,7 @@ end
 to color-patches-based-on-cell-type
   ask NICs [
     set hidden? true
-    if mode = 0 [ask patch-here [set pcolor 103]]
+    if mode = 0 OR mode = 4 [ask patch-here [set pcolor 103]]
     if mode = 1 [ask patch-here [set pcolor 105]]
     if mode = 2 [ask patch-here [set pcolor 15]]
     if mode = 3 [ask patch-here [set pcolor 13]]
@@ -349,7 +351,7 @@ to NICs-transitions
       ;; no proliferation: 2 possibilities
       [
         ;; 2nd condition: -> NT
-        ifelse age > age_threshold ;OR radius < R_t - delta_p
+        ifelse age >= age_threshold OR radius < R_t - delta_p
         [set mode 2]
         ;; 3rd condition -> no change, just increase age
         [set age age + 1]
@@ -361,7 +363,7 @@ to NICs-transitions
       ;; 1st cond: -> Ne
       if R_t - radius > delta_n + delta_p [ set mode 3 ]
       ;; 2nd cond -> PT
-      ;if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
+      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
     ]
   ]
 end
@@ -394,7 +396,7 @@ to-report compute_r_T_proba [a-turtle]
   report proba
 end
 
-;; ## param on current state of the overall system ##
+; ## param on current state of the overall system ##
 to-report compute_R_t
   let value 0
   let counter 0
@@ -408,6 +410,20 @@ to-report compute_R_t
   ]
   report value / counter
 end
+
+;to-report compute_R_t
+;  let max-radius 0
+;  ask NICs with [mode = 1] [
+;    let neighbor_cells turtles-on neighbors
+;    let N count neighbor_cells with [breed = NICs and mode = 0]
+;    if N >= 1 [
+;      if radius > max-radius [
+;        set max-radius radius
+;      ]
+;    ]
+;  ]
+;  report max-radius
+;end
 
 to-report compute_delta_n
   let value a * compute_R_t ^ (2 / 3)
@@ -573,7 +589,7 @@ INPUTBOX
 159
 268
 initial_radius
-3.0
+5.0
 1
 0
 Number
@@ -604,7 +620,7 @@ age_threshold
 age_threshold
 0
 50
-14.0
+10.0
 1
 1
 NIL
@@ -616,7 +632,7 @@ INPUTBOX
 275
 401
 K_initial
-0.009
+9.0E-4
 1
 0
 Number
