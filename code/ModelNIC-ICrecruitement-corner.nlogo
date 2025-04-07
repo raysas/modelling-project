@@ -135,6 +135,7 @@ to go
       let r_T_proba compute_r_T_proba self
       let killed_PTs []
 
+
       ;; -- 1: anti tumor --
       ;;    <> a. if IC is CTL
       ifelse mode = 1 [
@@ -142,7 +143,7 @@ to go
         ask PT1 [
           let r random-float 1
 
-          if r > r_I_proba [ ;; -- PT cell killed
+          if r < r_I_proba [ ;; -- PT cell killed
             set mode 4 ;;-- defining mode 4: unstable state -> becomes normal/free cell
             set killed_PTs lput self killed_PTs
           ]
@@ -164,7 +165,7 @@ to go
         let chosen_cell one-of PT1
         let r random-float 1
 
-        if r > r_I_proba [
+        if r < r_I_proba [
           let reference_IC self
           ask chosen_cell [
             set mode 4
@@ -220,6 +221,8 @@ to go
     ]
 
   ] color-patches-based-on-cell-type
+
+  print (word "number of kills" successes "; number of time IC was killed:" failures)
 
   let number_of_ICnewborns compute_num_newborns successes failures
   if number_of_ICnewborns > 0 [
@@ -392,7 +395,7 @@ end
 to-report compute_r_T_proba [a-turtle]
   let nI1 compute_nI1 a-turtle
   let nPT1 compute_nPT1 a-turtle
-  let proba K1 * ( (nPT1) / (nI1 + 0.01) )
+  let proba K1 * ( (nPT1) / (nI1 + 0.99) )
   report proba
 end
 
@@ -527,8 +530,8 @@ end
 GRAPHICS-WINDOW
 295
 43
-808
-557
+809
+558
 -1
 -1
 5.0
@@ -620,7 +623,7 @@ age_threshold
 age_threshold
 0
 50
-10.0
+22.0
 1
 1
 NIL
@@ -632,7 +635,7 @@ INPUTBOX
 275
 401
 K_initial
-9.0E-4
+0.005
 1
 0
 Number

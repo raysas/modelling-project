@@ -6,7 +6,7 @@ NICs-own [mode age radius PT_type change_to ]
 ;; ----------------------- parameters + related functions to set them -----------------------------------
 
 globals [ p0 phi0 a b Rmax K0 K1 ;;--paramters for the simulation
-         R_t delta_p delta_n nNT nNe NPT nT nI GF NF n_nonmut n_mut ] ;;--parameteres that get updated every iteration
+         R_t R_n delta_p delta_n nNT nNe NPT nT nI GF NF n_nonmut n_mut ] ;;--parameteres that get updated every iteration
 
 ;; --> used in setup to initialize simulation parameters (from table 3)
 to initialize_parameters
@@ -16,7 +16,7 @@ to initialize_parameters
 end
 ;; --> used in go to update the time dependent params that change at each tick
 to update_time_dependent_parameters
-  set R_t compute_R_t     set delta_p compute_delta_p     set delta_n compute_delta_n
+  set R_t compute_R_t   set R_n compute_R_n  set delta_p compute_delta_p     set delta_n compute_delta_n
   set nNT countNT     set nNe countNe    set nPT countPT
   set nT nNT + nNe + nPT
   set GF nPT / nT                        set NF nNe / nT
@@ -62,7 +62,7 @@ to go
   update_time_dependent_parameters
 
   save-params-csv "params.csv"
-  save-params-csv (word "Nmm" Nmm "params.csv")
+  save-params-csv (word "Nmm=" Nmm ".csv")
 
 
   ;; ----- transition rules for NIC -----
@@ -180,12 +180,18 @@ to-report compute_R_t
   report value / counter
 end
 
+to-report compute_R_n
+  let value 0
+  set value compute_R_t - ( compute_delta_p + compute_delta_n )
+  report value
+end
+
 to-report compute_delta_n
-  let value a * compute_R_t ^ (2 / 3)
+  let value a * ( compute_R_t ^ (2 / 3) )
   report value
 end
 to-report compute_delta_p
-  let value b * compute_R_t ^ (2 / 3)
+  let value b * ( compute_R_t ^ (2 / 3) )
   report value
 end
 
@@ -230,13 +236,13 @@ to save-params-csv [filename]
   let iteration ticks
   ifelse not file-exists? filename [
     file-open filename
-    file-print "Iteration, Rt, delta p, delta n, nNT, nNe, nPT, nT, nI, nonmut, mut , GF , NF "
+    file-print "Iteration, Rt, Rn, delta p, delta n, nNT, nNe, nPT, nT, nI, nonmut, mut , GF , NF "
   ]
    [
     file-open filename
   ]
 
-  file-print (word iteration "," R_t "," delta_p "," delta_n "," nNT "," nNe "," nPT "," nT "," nI "," n_nonmut "," n_mut ","  GF ","  NF )
+  file-print (word iteration "," R_t "," R_n ","  delta_p "," delta_n "," nNT "," nNe "," nPT "," nT "," nI "," n_nonmut "," n_mut ","  GF ","  NF )
   file-close
 end
 @#$#@#$#@
@@ -336,7 +342,7 @@ age_threshold
 age_threshold
 0
 50
-23.0
+15.0
 1
 1
 NIL
