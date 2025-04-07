@@ -51,7 +51,9 @@ to setup
   ]
 
   ;; --setup ICs in a random corner
-  setup_ICs
+  let ncells count patches
+  let total_ICs floor (k_initial * ncells)
+  setup_ICs total_ICs
 
   color-patches-based-on-cell-type
   reset-ticks
@@ -105,47 +107,8 @@ to go
   ]
 
   ;; ----- transition rules for NIC -----
-  NICs-transitions  ask NICs with [mode = 1 OR mode = 2][
+  NICs-transitions
 
-    ifelse mode = 1 [
-      let N_neighbors get-Nneighbors self
-      let N count N_neighbors
-
-      let r_p 0
-      ifelse PT_type = 1
-      [ set r_p p1 radius ]
-      [ set r_p p2 radius count N_neighbors ]
-
-      let r random-float 1
-
-      ;; 1st condition: proliferate
-      ifelse r_p > 0 AND r_p < r AND N > 1 [
-
-        ;; -- chose a normal cell
-        let chosen_normal_cell one-of N_neighbors
-
-        ;; -- make 2 daughter cells
-        set age 0
-        let reference_PT self
-        ask chosen_normal_cell [set change_to reference_PT]
-      ]
-      ;; no proliferation: 2 possibilities
-      [
-        ;; 2nd condition: -> NT
-        ifelse age > age_threshold OR radius < R_t - delta_p [set mode 2]
-        ;; 3rd condition -> no change, just increase age
-        [set age age + 1]
-      ]
-    ]
-
-    ;;else, its mode 2
-    [
-      ;; 1st cond: -> Ne
-      if R_t - radius > delta_n + delta_p [ set mode 3 ]
-      ;; 2nd cond -> PT
-      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
-    ]
-  ]
   ;; ------------ changing the daughter cells of PT to mode 1 ------------
   ask NICs with [mode = 0][
     if is-NIC? change_to  [
@@ -258,11 +221,13 @@ to go
 
   let number_of_ICnewborns compute_num_newborns successes failures
   if number_of_ICnewborns > 0 [
-    ask n-of round number_of_ICnewborns NICs with [mode = 0 AND change_to = nobody] [
-
-      hatch-ICs 1 [ set mode random 2 set radius distancexy 0 0]
-      die
-    ]
+;    ask n-of round number_of_ICnewborns NICs with [mode = 0 AND change_to = nobody] [
+;
+;      hatch-ICs 1 [ set mode random 2 set radius distancexy 0 0]
+;      die
+;
+;    ]
+   setup_ICs number_of_ICnewborns
   ]
 
   color-patches-based-on-cell-type
@@ -274,16 +239,14 @@ end
 ;; ------------------------------------ setup ICs -------------------------------------------------------
 
 
-to setup_ICs
-  let ncells count patches
-  let total_ICs floor (k_initial * ncells)
+to setup_ICs [num_to_spawn]
 
   let corner random 4
   let x-min 0
   let x-max 0
   let y-min 0
   let y-max 0
-  let boundary ceiling (sqrt total_ICs)
+  let boundary ceiling (sqrt num_to_spawn)
 
   ;; Define the bounds of the chosen corner
   if corner = 0 [ ; bottom-left
@@ -317,7 +280,7 @@ to setup_ICs
     pycor >= y-min and pycor <= y-max
   ]
 
-  let chosen-patches n-of total_ICs corner-patches
+  let chosen-patches n-of num_to_spawn corner-patches
 
   ;; Create ICs on those patches, replacing anyone there
   ask chosen-patches [
@@ -386,7 +349,8 @@ to NICs-transitions
       ;; no proliferation: 2 possibilities
       [
         ;; 2nd condition: -> NT
-        ifelse age > age_threshold OR radius < R_t - delta_p [set mode 2]
+        ifelse age > age_threshold ;OR radius < R_t - delta_p
+        [set mode 2]
         ;; 3rd condition -> no change, just increase age
         [set age age + 1]
       ]
@@ -397,7 +361,7 @@ to NICs-transitions
       ;; 1st cond: -> Ne
       if R_t - radius > delta_n + delta_p [ set mode 3 ]
       ;; 2nd cond -> PT
-      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
+      ;if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
     ]
   ]
 end
@@ -547,8 +511,8 @@ end
 GRAPHICS-WINDOW
 295
 43
-708
-457
+808
+557
 -1
 -1
 5.0
@@ -561,10 +525,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--40
-40
--40
-40
+-50
+50
+-50
+50
 1
 1
 1
@@ -597,7 +561,7 @@ Nmm
 Nmm
 0
 1
-0.3
+0.2
 0.1
 1
 NIL
