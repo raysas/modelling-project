@@ -8,7 +8,7 @@ This repository contains the code and documentation for the Modelling and Simula
 
 [^1]: Pourhasanzade, F., Sabzpoushan, S. H., Alizadeh, A. M., & Esmati, E. (2017). An agent-based model of avascular tumor growth: Immune response tendency to prevent cancer development. Simulation, 93(8), 641-657.
 
-You'll find the report [in docs folder](./docs/).
+You'll find the report [in docs folder](./docs/JoelleASSY_RayaneADAM_MS_report.pdf).
 
 Models are implemented in NetLogo and found in the `models` folder. The models are:
 - `tumor_growth.nlogo`: A model of tumor growth

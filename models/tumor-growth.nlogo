@@ -31,6 +31,8 @@ end
 to setup
   clear-all
   if file-exists? "params.csv" [file-delete "params.csv"]
+    if file-exists? ( word "age" age_threshold ".csv") [file-delete ( word "age" age_threshold ".csv")]
+
   initialize_parameters
 
   ;; --initializing all cells to NIC of mode 0
@@ -45,7 +47,7 @@ to setup
     if radius < initial_radius [
       set mode 1
       let r random-float 1
-      ifelse r < Nmm [set PT_type 2][set PT_type 1]
+      ifelse r < Nmm [set PT_type 2][set PT_type 1 print ( word "set to mutant")]
     ]
   ]
 
@@ -62,7 +64,7 @@ to go
   update_time_dependent_parameters
 
   save-params-csv "params.csv"
-  save-params-csv (word "Nmm=" Nmm ".csv")
+  save-params-csv ( word "age" age_threshold ".csv")
 
   ask NICs with [mode = 1 OR  mode = 2][
 
@@ -73,12 +75,17 @@ to go
       let r_p 0
       ifelse PT_type = 1
       [ set r_p p1 radius ]
-      [ set r_p p2 radius count N_neighbors]
+      [ set r_p p2 radius count N_neighbors ]
+
+;      print (word "this is p1:" p1 radius "; and this is p2:" p2 radius N)
 
       let r random-float 1
 
       ;; 1st condition: proliferate
-      ifelse r_p > 0 AND r_p < r AND N > 0 [
+      ifelse r_p > 0 AND r_p > r AND N > 0 [
+
+;        print(word "im proliferating, type" PT_type)
+
 
         ;; -- chose a normal cell
         let chosen_normal_cell one-of N_neighbors
@@ -86,6 +93,7 @@ to go
         ;; -- make 2 daughter cells
         set age 0
         let samePT_type PT_type
+;        print (word "same PT type while proliferating:" samePT_type )
         ask chosen_normal_cell [set mode 1 set age 0 set PT_type samePT_type]
       ]
       ;; no proliferation: 2 possibilities
@@ -103,9 +111,12 @@ to go
       ;; 1st cond: -> Ne
       if radius < R_n [set mode 3]
       ;; 2nd cond -> PT
-      if radius > R_t - delta_p [set mode 1 set age 0 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
+      if radius > R_t - delta_p [set mode 1 set age 0 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1 print ( word "set to mutant")]]
     ]
   ]
+
+;  print (word "nonmut:" n_nonmut "; mut:" n_mut)
+
   color-patches-based-on-cell-type
   tick
 end
@@ -251,10 +262,10 @@ ticks
 30.0
 
 BUTTON
-80
-128
-143
-161
+66
+336
+129
+369
 NIL
 setup
 NIL
@@ -268,10 +279,10 @@ NIL
 1
 
 SLIDER
-25
-69
-197
-102
+21
+163
+193
+196
 Nmm
 Nmm
 0
@@ -283,21 +294,21 @@ NIL
 HORIZONTAL
 
 INPUTBOX
-93
-204
-159
-268
+62
+213
+137
+275
 initial_radius
-3.0
+2.0
 1
 0
 Number
 
 BUTTON
-71
-291
-134
-324
+67
+385
+130
+418
 NIL
 go
 T
@@ -311,39 +322,39 @@ NIL
 1
 
 SLIDER
-26
-28
-198
-61
+22
+122
+194
+155
 age_threshold
 age_threshold
 0
 50
-8.0
+10.0
 1
 1
 NIL
 HORIZONTAL
 
 PLOT
-848
-73
-1192
-416
-plot 1
+773
+72
+1194
+483
+Tumor cells evolution with time
 NIL
-NIL
+Count
 0.0
-10.0
+100.0
 0.0
-10.0
+50.0
 true
-false
+true
 "" ""
 PENS
-"default" 1.0 0 -13791810 true "" "plot countPT "
-"pen-1" 1.0 0 -1184463 true "" "plot countNT"
-"pen-2" 1.0 0 -2674135 true "" "plot countNe"
+"nPT" 1.0 0 -13791810 true "" "plot countPT "
+"nNT" 1.0 0 -1184463 true "" "plot countNT"
+"nNe" 1.0 0 -2674135 true "" "plot countNe"
 
 @#$#@#$#@
 ## WHAT IS IT?

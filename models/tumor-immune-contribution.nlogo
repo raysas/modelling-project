@@ -1,23 +1,33 @@
 breed [NICs NIC]
 breed [ICs IC]
 
-NICs-own [mode age radius PT_type change_neighbor] ;;type is strictly for NIC of mode 0 (1 mutant, 2 non-muta
-ICs-own [mode]
-turtles-own [N_neighbors]
+NICs-own [mode age radius PT_type taken]
+ICs-own [mode radius move_to]
 
-;; -- parameters
+;; ----------------------- parameters + related functions to set them -----------------------------------
 
-globals [ p0 phi0 a b Rmax K0 KI]
+globals [ p0 phi0 a b Rmax K0 K1 ;;--paramters for the simulation
+         R_t R_n delta_p delta_n nNT nNe NPT nT nI GF NF n_nonmut n_mut recruited_number] ;;--parameteres that get updated every iteration
 
+;; --> used in setup to initialize simulation parameters (from table 3)
 to initialize_parameters
-  set p0 0.7
-  set phi0 0.06
-  set a 0.42
-  set b 0.11
-  set Rmax 37.5
-  set K0 0.5
-  set KI 0.2
+  set p0 0.7      set phi0 0.06      set a 0.42
+  set b 0.11      set Rmax  37.5     set K0 0.5
+  set K1 0.2
 end
+;; --> used in go to update the time dependent params that change at each tick
+to update_time_dependent_parameters
+  set R_t compute_R_t   set R_n compute_R_n  set delta_p compute_delta_p     set delta_n compute_delta_n
+  set nNT countNT     set nNe countNe    set nPT countPT
+  set nT nNT + nNe + nPT                 set nI countIC
+  set GF nPT / nT                        set NF nNe / nT
+  set n_nonmut count NICs with [mode = 1 AND PT_type = 2]
+  set n_mut    count NICs with [mode = 1 AND PT_type = 1]
+end
+
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ---------------------------------- set up ------------------------------------------------------------
 
 to setup
   clear-all
@@ -26,10 +36,13 @@ to setup
 
   ;; --initializing all cells to NIC of mode 0
   ask patches [
-    sprout-NICs 1 [
-      set mode 0 set age 0 set radius distancexy 0 0 set size 0.5 set change_neighbor 0
-    ]
+    sprout-NICs 1 [set mode 0 set age 0 set radius distancexy 0 0 set taken false]
   ]
+
+  ;; --setup ICs in a random corner
+  let ncells count patches
+  let total_ICs floor (k_initial * ncells)
+  setup_ICs total_ICs
 
   ;; --setup initial PT in the center
   ask NICs [
@@ -40,109 +53,156 @@ to setup
     ]
   ]
 
-  ;; --setup ICs in a random corner
-  setup_ICs
-
   color-patches-based-on-cell-type
   reset-ticks
 end
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; --------------------------------------- go -----------------------------------------------------------
 
 to go
 
-  let R_t compute_R_t
-  let delta_p compute_delta_p
-  let delta_n compute_delta_n
-  let r_p 0
+
+  update_time_dependent_parameters
 
   save-params-csv "params.csv"
 
-  ask turtles [
-    let neighbor_cells turtles-on neighbors
-    set N_neighbors neighbor_cells with [breed = NICs and mode = 0]
-  ]
-
-  ask NICs[
-      ifelse PT_type = 1
-      [ set r_p p1 radius ]
-      [ set r_p p2 radius count N_neighbors ]
-  ]
-
-  ask NICs with [mode = 1 OR mode = 2][
-    ifelse mode = 1 [
-
-      ;; 1st condition: proliferate
-      let r random-float 1
-      let N count N_neighbors
-      ifelse r_p > 0 AND r_p < r AND N > 1 [
-        ;; -- chose a normal cell
-        let chosen_normal_cell one-of N_neighbors
-
-        ;; -- make 2 daughter cells
-        set age 0
-        ask chosen_normal_cell [set change_neighbor myself]
+  ; ---- move IC to normal cell chosen from last iteration -----
+  ask ICs with [move_to != nobody] [
+    if is-NIC? move_to [
+      replace move_to
       ]
-      [
-        ifelse age > age_threshold ;;2nd condition, -> NT
-        [set mode 2]
-        [set age age + 1] ;;3rd -> no change, becomes older
-    ]]
-    ;;else, its mode 2
-    [
-      if R_t - radius > delta_n + delta_p
-      [ set mode 3 ]
-    ]
-  ]
-
-
-  ;; ICs random walk
-  let unbiased countT / countCells
-  let biased countPT / countT
-  let maximum max list unbiased biased
-  let r_walk compute_k * maximum
-
-  ask ICs [
-    let r random-float 1
-    let chosen_normal_cell nobody
-    ifelse maximum = biased
-    [if r_walk < r [set chosen_normal_cell min-one-of N_neighbors [radius]]] ;; move toward center
-    [if r_walk < r [set chosen_normal_cell one-of N_neighbors]] ;; move randomly
-    if chosen_normal_cell != nobody[
-    let reference_IC self
-    ask chosen_normal_cell [set change_neighbor reference_IC]]
-  ]
-
-  ask NICs with [mode = 0 ][
-    if is-NIC? change_neighbor [set mode 1] ;; daughter cell of PT
-    if is-IC? change_neighbor [
-      let my-x xcor
-      let my-y ycor
-      let IC-x [xcor] of change_neighbor
-      let IC-y [ycor] of change_neighbor
-      let IC-mode [mode] of change_neighbor
       die
-      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
-      ask patch IC-x IC-y [
-        ask ICs-here [ die ]
-        sprout-NICs 1 [set mode 0 set radius distancexy 0 0]
-      ]
     ]
+
+  ;; -------- recruit newborns ICs from successes of previous iteration ---------------
+  if recruited_number > 0 [setup_ICs recruited_number set recruited_number 0]
+
+
+  ;; -------------------transition rules for NIC --------------------
+  NICs-transitions
+
+  ;; ------------------ transition rules for IC ---------------------
+  let successes 0
+  let failures 0
+  ask ICs [
+
+    let nPT1 compute_nPT1 self
+    let nI1 compute_nI1 self
+
+    ifelse nPT1 > 0 ;; --> if true perform interaction transition rules, else random walk
+    ;; transitions:
+    [
+      let PT1 get-PT1 self
+      let r_I_proba compute_r_I_proba self
+      let r_T_proba compute_r_T_proba self
+      let killed_PTs []
+
+
+      ;; -- 1: anti tumor --
+      ;;    <> a. if IC is CTL
+      ifelse mode = 1 [
+        ;; -- looping through neighboring PTs, killing by proba r_I
+        ask PT1 [
+          let r random-float 1
+
+          if r > r_I_proba [ ;; -- PT cell killed
+            set mode 4 ;;-- defining mode 4: unstable state -> becomes normal/free cell
+            set killed_PTs lput self killed_PTs
+          ]
+        ]
+        ;; -- replace one of the killed cells (if any)
+        if not empty? killed_PTs [
+          let random_index random length killed_PTs
+          let chosen_cell item random_index killed_PTs
+
+          replace chosen_cell
+
+          set successes successes + ( length killed_PTs )
+          set failures failures + ( nPT1 - (length killed_PTs) )
+          die
+        ]
+      ]
+
+      ;;    <> b. else IC is NK
+      [
+        let chosen_cell one-of PT1
+        let r random-float 1
+
+        if r > r_I_proba [
+          replace chosen_cell
+          set killed_PTs lput chosen_cell killed_PTs
+          die
+        ]
+
+        set successes successes + (length killed_PTs)
+        set failures failures + ( 1 - (length killed_PTs) )
+      ]
+
+      ;; -- 3: pro tumor --
+      let r random-float 1
+      if empty? killed_PTs AND r > r_T_proba [
+        hatch-NICs 1 [
+          set mode 0
+          set radius distancexy 0 0
+          set taken false
+        ]
+        die
+      ]
+
+    ]
+
+    ;; if no neighboring PT: perform random walk
+    [
+      let N_neighbors get-Nneighbors self
+
+      let unbiased countT / countCells
+      let biased countPT / countT
+      let r_walk compute_k * (biased / unbiased)
+      let r random-float 1
+      let chosen_normal_cell nobody
+
+      ifelse (r > r_walk)
+        [set chosen_normal_cell min-one-of N_neighbors [radius]] ;; move toward center
+        [set chosen_normal_cell one-of N_neighbors] ;; move randomly
+
+      if chosen_normal_cell != nobody [
+        set move_to chosen_normal_cell
+        ask chosen_normal_cell [set taken true]
+      ]
   ]
+
+  let number_of_ICnewborns compute_num_newborns successes failures
+  if number_of_ICnewborns > 0 [
+   set recruited_number number_of_ICnewborns
+  ]
+  ]
+
+  ;; set NIC unstable state (mode = 4) to 0
+  ask NICs with [mode = 4][
+    set mode 0
+    set age 0
+    set taken false
+  ]
+
   color-patches-based-on-cell-type
   tick
 end
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------ setup ICs -------------------------------------------------------
 
-to setup_ICs
-  let ncells count patches
-  let total_ICs floor (k * ncells)
+
+to setup_ICs [num_to_spawn]
 
   let corner random 4
   let x-min 0
   let x-max 0
   let y-min 0
   let y-max 0
-  let boundary ceiling (sqrt total_ICs)
+  let boundary ceiling (sqrt num_to_spawn)
 
   ;; Define the bounds of the chosen corner
   if corner = 0 [ ; bottom-left
@@ -176,7 +236,7 @@ to setup_ICs
     pycor >= y-min and pycor <= y-max
   ]
 
-  let chosen-patches n-of total_ICs corner-patches
+  let chosen-patches n-of num_to_spawn corner-patches
 
   ;; Create ICs on those patches, replacing anyone there
   ask chosen-patches [
@@ -186,9 +246,17 @@ to setup_ICs
     ;; Create a new IC here
     sprout-ICs 1 [
       set mode random 2
+      set radius distancexy 0 0
+      set move_to nobody
     ]
   ]
 end
+
+;######################################## FUNCTIONS AND PROCEDURES ######################################
+
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------- coloring -------------------------------------------------
 
 to color-patches-based-on-cell-type
   ask NICs [
@@ -201,13 +269,88 @@ to color-patches-based-on-cell-type
 
   ask ICs[
     set hidden? true
-    ask patch-here [set pcolor yellow ]
+    ask patch-here [set pcolor green + 3]
   ]
 end
 
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; -------------------------------------- transition rules ----------------------------------------------
+
+to NICs-transitions
+  ask NICs with [mode = 1 OR  mode = 2][
+
+    mutate self mutation_probability
+
+    ifelse mode = 1 [
+      let N_neighbors get-Nneighbors self
+      let N count N_neighbors
+
+      let r_p 0
+      ifelse PT_type = 1
+      [ set r_p p1 radius ]
+      [ set r_p p2 radius N]
+
+      let r random-float 1
+
+      ;; 1st condition: proliferate
+      ifelse r_p > 0 AND r_p > r AND N > 0 [
+
+        ;; -- chose a normal cell
+        let chosen_normal_cell one-of N_neighbors
+
+        ;; -- make 2 daughter cells
+        set age 0
+        let samePT_type PT_type
+        ask chosen_normal_cell [set mode 1 set age 0 set PT_type samePT_type]
+      ]
+      ;; no proliferation: 2 possibilities
+      [
+        ifelse age > age_threshold AND radius < R_t - delta_p
+        ;; 2nd condition: -> NT
+        [set mode 2 set age 0 ]
+        ;; 3rd condition -> no change, just increase age
+        [set age age + 1]
+      ]
+    ]
+
+    ;; else it's mode 2
+    [
+      ;; 1st cond: -> Ne
+      if radius < R_n [set mode 3]
+      ;; 2nd cond -> PT
+      if radius > R_t - delta_p [set mode 1 set age 0 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
+    ]
+  ]
+end
 
 
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; --------------------------------- Replace Procedure --------------------------------------------------
+
+
+to replace [chosen_cell]
+  let my-x xcor
+  let my-y ycor
+  let NIC-x [xcor] of chosen_cell
+  let NIC-y [ycor] of chosen_cell
+  let mymode mode
+  ask patch my-x my-y [
+    sprout-NICs 1 [set mode 0 set radius distancexy 0 0 set taken false]
+  ]
+  ask patch NIC-x NIC-y [
+    sprout-ICs 1 [set mode mymode set radius distancexy 0 0 set move_to nobody]
+    ask NICs-here [ die ]
+  ]
+end
+
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; --------------------------------- computing parameters -----------------------------------------------
+
+;; ## probabilities ##
 to-report p1 [r]
   let proba p0 * (1 - (r / Rmax))
   report proba
@@ -217,19 +360,40 @@ to-report p2 [r num_neighboring_N]
   report proba
 end
 
+to-report compute_r_I_proba [a-turtle]
+  let nI1 compute_nI1 a-turtle
+  let nPT1 compute_nPT1 a-turtle
+  let proba K0 * ( (nI1) / (nPT1) )
+  report proba
+end
 
+to-report compute_r_T_proba [a-turtle]
+  let nI1 compute_nI1 a-turtle
+  let nPT1 compute_nPT1 a-turtle
+  let proba K1 * ( (nPT1) / (nI1 + 0.99) )
+  report proba
+end
+
+;; ## param on current state of the overall system ##
 to-report compute_R_t
   let value 0
   let counter 0
-  ask NICs with [mode = 1 ] [
+  ask NICs with [mode = 1] [
     let neighbor_cells turtles-on neighbors
-    let N count neighbor_cells with [breed = NICs and mode = 0]
+    let myradius radius
+    let N count neighbor_cells with [breed = NICs and mode = 0 and radius > myradius]
     if N >= 1 [
       set value value + radius
       set counter counter + 1
     ]
   ]
   report value / counter
+end
+
+to-report compute_R_n
+  let value 0
+  set value compute_R_t - ( compute_delta_p + compute_delta_n )
+  report value
 end
 
 to-report compute_delta_n
@@ -245,10 +409,12 @@ to-report compute_k
   report countIC / countCells
 end
 
-
-
-
-
+to-report compute_num_newborns [v f]
+  let nPT_ countPT
+  let nT_ countT
+  let num (v - f) * ( nPT_ / nT_ )
+  report num
+end
 
 to-report countNe
   report count NICs with [mode = 3]
@@ -269,33 +435,57 @@ to-report countIC
   report count ICs
 end
 
+;; ## params on one turtle ##
 
+to-report get-Nneighbors [a-turtle]
+  let N_neighbors nobody
+  ask a-turtle [
+
+    let neighbor_cells turtles-on neighbors
+    set N_neighbors neighbor_cells with [breed = NICs and mode = 0 and taken = false ]
+  ]
+  report N_neighbors
+end
+
+
+
+to-report get-PT1 [a-turtle]  ;; takes and agent and returns teh list of neighboring PT
+  let PT_neighbors nobody
+  ask a-turtle [
+
+    let neighbor_cells turtles-on neighbors
+    set PT_neighbors neighbor_cells with [breed = NICs and mode = 1 ]
+  ]
+  report PT_neighbors
+end
+to-report get-I1 [a-turtle]  ;; takes and agent and returns the list of neighboring IC
+  let I_neighbors nobody
+  ask a-turtle [
+
+    let neighbor_cells turtles-on neighbors
+    set I_neighbors neighbor_cells with [breed = ICs ]
+  ]
+  report I_neighbors
+end
+
+to-report compute_nPT1 [a-turtle]
+  report count get-PT1 a-turtle
+end
+to-report compute_nI1 [a-turtle]
+  report count get-I1 a-turtle
+end
+
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------------------------------------------------------------------------
+;; ------------------------------------ saving parameters -----------------------------------------------
 
 
 to save-params-csv [filename]
-  let iteration ticks
-
-  let R_t compute_R_t
-  let delta_p compute_delta_p
-  let delta_n compute_delta_n
-  let r_p 0
-
-  let nNT count NICs with [mode = 2]
-  let nNe count NICs with [mode = 3]
-  let nPT count NICs with [mode = 1]
-  let nT nNT + nNe + nPT
-  let nI count ICs
-
-  let GF nPT / nT
-  let NF nNe / nT
-
-  let n_nonmut count NICs with [mode = 1 AND PT_type = 2 ]
-  let n_mut count NICs with [ mode = 1 AND PT_type = 1 ]
-
   ;; -- savin some params to csv
+  let iteration ticks
   ifelse not file-exists? filename [
     file-open filename
-    file-print "Iteration,Rt, delta p, delta n, nNT, nNe, nPT, nT, nI, nonmut, mut , GF , NF "
+    file-print "Iteration, Rt, delta p, delta n, nNT, nNe, nPT, nT, nI, nonmut, mut , GF , NF "
   ]
    [
     file-open filename
@@ -304,12 +494,24 @@ to save-params-csv [filename]
   file-print (word iteration "," R_t "," delta_p "," delta_n "," nNT "," nNe "," nPT "," nT "," nI "," n_nonmut "," n_mut ","  GF ","  NF )
   file-close
 end
+
+; #########################################################################################################
+; NEW CONTRIBUTION
+
+to mutate [an-NIC proba_mut]
+  ask an-nic [
+    let r random-float 1
+    if mode = 1 AND PT_type = 2 AND r < proba_mut [
+      set PT_type 1
+    ]
+  ]
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
-387
-107
-903
-625
+295
+43
+708
+457
 -1
 -1
 5.0
@@ -322,10 +524,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--50
-50
--50
-50
+-40
+40
+-40
+40
 1
 1
 1
@@ -333,10 +535,10 @@ ticks
 30.0
 
 BUTTON
-80
-128
-143
-161
+171
+391
+234
+424
 NIL
 setup
 NIL
@@ -350,10 +552,10 @@ NIL
 1
 
 SLIDER
-25
-69
-197
-102
+75
+181
+247
+214
 Nmm
 Nmm
 0
@@ -365,10 +567,10 @@ NIL
 HORIZONTAL
 
 INPUTBOX
-93
-204
-159
-268
+116
+241
+207
+305
 initial_radius
 3.0
 1
@@ -376,13 +578,13 @@ initial_radius
 Number
 
 BUTTON
-71
-291
-134
-324
+90
+391
+153
+424
 NIL
 go
-NIL
+T
 1
 T
 OBSERVER
@@ -393,10 +595,10 @@ NIL
 1
 
 SLIDER
-26
-28
-198
-61
+76
+140
+248
+173
 age_threshold
 age_threshold
 0
@@ -408,12 +610,44 @@ NIL
 HORIZONTAL
 
 INPUTBOX
-56
-341
-275
-401
-K
+117
+315
+207
+375
+K_initial
 0.005
+1
+0
+Number
+
+PLOT
+783
+85
+1146
+415
+Evoultion of cells through time 
+NIL
+Counts
+0.0
+10.0
+0.0
+10.0
+true
+true
+"" ""
+PENS
+"nPT" 1.0 0 -13791810 true "" "plot countPT"
+"nNT" 1.0 0 -13840069 true "" "plot countNT"
+"nNe" 1.0 0 -2674135 true "" "plot countNe"
+"nIC" 1.0 0 -1184463 true "" "plot countIC"
+
+INPUTBOX
+115
+63
+220
+123
+mutation_probability
+0.05
 1
 0
 Number
