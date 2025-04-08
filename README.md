@@ -6,6 +6,10 @@ This repository contains the code and documentation for the Modelling and Simula
 > "An agent-based model of avascular tumor growth:
 > Immune response tendency to prevent cancer development" [^1]
 
+| Tumor growth | Tumor-immune interaction |
+|:--:|:--:|
+| ![g](./assets/growth.gif) | ![i](./assets/immune.gif) |
+
 [^1]: Pourhasanzade, F., Sabzpoushan, S. H., Alizadeh, A. M., & Esmati, E. (2017). An agent-based model of avascular tumor growth: Immune response tendency to prevent cancer development. Simulation, 93(8), 641-657.
 
 You'll find the report [in docs folder](./docs/JoelleASSY_RayaneADAM_MS_report.pdf).
