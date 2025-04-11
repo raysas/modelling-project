@@ -1,7 +1,7 @@
 breed [NICs NIC]
 breed [ICs IC]
 
-NICs-own [mode age radius PT_type change_to ]
+NICs-own [mode age radius PT_type]
 
 ;; ----------------------- parameters + related functions to set them -----------------------------------
 
@@ -36,7 +36,7 @@ to setup
   ;; --initializing all cells to NIC of mode 0
   ask patches [
     sprout-NICs 1 [
-      set mode 0 set age 0 set radius distancexy 0 0 set size 0.5 set change_to nobody
+      set mode 0 set age 0 set radius distancexy 0 0
     ]
   ]
 
@@ -64,18 +64,48 @@ to go
   save-params-csv "params.csv"
   save-params-csv (word "Nmm=" Nmm ".csv")
 
+  ask NICs with [mode = 1 OR  mode = 2][
 
-  ;; ----- transition rules for NIC -----
-  NICs-transitions
+    ifelse mode = 1 [
+      let N_neighbors get-Nneighbors self
+      let N count N_neighbors
 
-  ;; ------------ changing the daughter cells of PT to mode 1 ------------
-  ask NICs with [mode = 0][
-    if is-NIC? change_to  [
-      let sametype [PT_type] of change_to
-      set mode 1 set PT_type sametype set age 0 set change_to nobody
-    ] ;; daughter cell of PT
+      let r_p 0
+      ifelse PT_type = 1
+      [ set r_p p1 radius ]
+      [ set r_p p2 radius N]
+
+      let r random-float 1
+
+      ;; 1st condition: proliferate
+      ifelse r_p > 0 AND r_p > r AND N > 0 [
+
+        ;; -- chose a normal cell
+        let chosen_normal_cell one-of N_neighbors
+
+        ;; -- make 2 daughter cells
+        set age 0
+        let samePT_type PT_type
+        ask chosen_normal_cell [set mode 1 set age 0 set PT_type samePT_type]
+      ]
+      ;; no proliferation: 2 possibilities
+      [
+        ifelse age > age_threshold AND radius < R_t - delta_p
+        ;; 2nd condition: -> NT
+        [set mode 2 set age 0 ]
+        ;; 3rd condition -> no change, just increase age
+        [set age age + 1]
+      ]
+    ]
+
+    ;; else it's mode 2
+    [
+      ;; 1st cond: -> Ne
+      if radius < R_n [set mode 3]
+      ;; 2nd cond -> PT
+      if radius > R_t - delta_p [set mode 1 set age 0 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
+    ]
   ]
-
   color-patches-based-on-cell-type
   tick
 end
@@ -94,60 +124,6 @@ to color-patches-based-on-cell-type
     if mode = 1 [ask patch-here [set pcolor 105]]
     if mode = 2 [ask patch-here [set pcolor 15]]
     if mode = 3 [ask patch-here [set pcolor 13]]
-  ]
-
-  ask ICs[
-    set hidden? true
-    ask patch-here [set pcolor yellow ]
-  ]
-end
-
-;; ------------------------------------------------------------------------------------------------------
-;; ------------------------------------------------------------------------------------------------------
-;; -------------------------------------- transition rules ----------------------------------------------
-
-to NICs-transitions
-  ask NICs with [mode = 1 OR mode = 2][
-
-    ifelse mode = 1 [
-      let N_neighbors get-Nneighbors self
-      let N count N_neighbors
-
-      let r_p 0
-      ifelse PT_type = 1
-      [ set r_p p1 radius ]
-      [ set r_p p2 radius count N_neighbors ]
-
-      let r random-float 1
-
-      ;; 1st condition: proliferate
-      ifelse r_p > 0 AND r_p < r AND N > 1 [
-
-        ;; -- chose a normal cell
-        let chosen_normal_cell one-of N_neighbors
-
-        ;; -- make 2 daughter cells
-        set age 0
-        let reference_PT self
-        ask chosen_normal_cell [set change_to reference_PT]
-      ]
-      ;; no proliferation: 2 possibilities
-      [
-        ifelse age > age_threshold OR radius < R_t - delta_p
-        ;; 2nd condition: -> NT
-        [set mode 2]
-        ;; 3rd condition -> no change, just increase age
-        [set age age + 1]
-      ]
-    ]
-
-    ;;else, its mode 2
-    [
-      ;; 1st cond: -> Ne
-      if R_t - radius > delta_n + delta_p [ set mode 3 ]
-      ;; 2nd cond -> PT
-      if radius > R_t - delta_p [set mode 1 let r random-float 1 ifelse r < Nmm [set PT_type 2][set PT_type 1]]
-    ]
   ]
 end
 
@@ -169,9 +145,10 @@ end
 to-report compute_R_t
   let value 0
   let counter 0
-  ask NICs with [mode = 1 ] [
+  ask NICs with [mode = 1] [
     let neighbor_cells turtles-on neighbors
-    let N count neighbor_cells with [breed = NICs and mode = 0]
+    let myradius radius
+    let N count neighbor_cells with [breed = NICs and mode = 0 and radius > myradius]
     if N >= 1 [
       set value value + radius
       set counter counter + 1
@@ -219,7 +196,7 @@ to-report get-Nneighbors [a-turtle]
   ask a-turtle [
 
     let neighbor_cells turtles-on neighbors
-    set N_neighbors neighbor_cells with [breed = NICs and mode = 0 and change_to = nobody ]
+    set N_neighbors neighbor_cells with [breed = NICs and mode = 0]
   ]
   report N_neighbors
 end
@@ -311,7 +288,7 @@ INPUTBOX
 159
 268
 initial_radius
-3.0
+2.0
 1
 0
 Number
@@ -342,7 +319,7 @@ age_threshold
 age_threshold
 0
 50
-15.0
+4.0
 1
 1
 NIL
