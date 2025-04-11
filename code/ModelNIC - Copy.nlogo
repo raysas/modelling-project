@@ -27,7 +27,7 @@ to setup
   ;; --initializing all cells to NIC of mode 0
   ask patches [
     sprout-NICs 1 [
-      set mode 0 set age 0 set radius distancexy 0 0 set size 0.5 set change_neighbor nobody
+      set mode 0 set age 0 set radius distancexy 0 0 set size 0.5 set change_neighbor 0
     ]
   ]
 
@@ -80,8 +80,7 @@ to go
 
         ;; -- make 2 daughter cells
         set age 0
-        let reference_PT self
-        ask chosen_normal_cell [set change_neighbor reference_PT]
+        ask chosen_normal_cell [set change_neighbor myself]
       ]
       [
         ifelse age > age_threshold ;;2nd condition, -> NT
@@ -113,22 +112,19 @@ to go
     ask chosen_normal_cell [set change_neighbor reference_IC]]
   ]
 
-  ask NICs with [mode = 0][
-    if is-NIC? change_neighbor  [
-      let sametype [PT_type] of change_neighbor
-      set mode 1 set PT_type sametype set age 0
-    ] ;; daughter cell of PT
+  ask NICs with [mode = 0 ][
+    if is-NIC? change_neighbor [set mode 1] ;; daughter cell of PT
     if is-IC? change_neighbor [
       let my-x xcor
       let my-y ycor
       let IC-x [xcor] of change_neighbor
       let IC-y [ycor] of change_neighbor
       let IC-mode [mode] of change_neighbor
-      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
       die
+      ask patch my-x my-y [sprout-ICs 1 [set mode IC-mode]]
       ask patch IC-x IC-y [
-        sprout-NICs 1 [set mode 0 set radius distancexy 0 0]
         ask ICs-here [ die ]
+        sprout-NICs 1 [set mode 0 set radius distancexy 0 0]
       ]
     ]
   ]
@@ -312,8 +308,8 @@ end
 GRAPHICS-WINDOW
 387
 107
-911
-634
+903
+625
 -1
 -1
 5.0
@@ -386,7 +382,7 @@ BUTTON
 324
 NIL
 go
-T
+NIL
 1
 T
 OBSERVER
@@ -417,7 +413,7 @@ INPUTBOX
 275
 401
 K
-5.0E-4
+0.005
 1
 0
 Number

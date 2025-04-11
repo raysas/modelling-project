@@ -73,12 +73,12 @@ to go
       let r_p 0
       ifelse PT_type = 1
       [ set r_p p1 radius ]
-      [ set r_p p2 radius N]
+      [ set r_p p2 radius count N_neighbors]
 
       let r random-float 1
 
       ;; 1st condition: proliferate
-      ifelse r_p > 0 AND r_p > r AND N > 0 [
+      ifelse r_p > 0 AND r_p < r AND N > 0 [
 
         ;; -- chose a normal cell
         let chosen_normal_cell one-of N_neighbors
@@ -288,7 +288,7 @@ INPUTBOX
 159
 268
 initial_radius
-2.0
+3.0
 1
 0
 Number
@@ -319,7 +319,7 @@ age_threshold
 age_threshold
 0
 50
-4.0
+8.0
 1
 1
 NIL
